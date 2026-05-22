@@ -7,6 +7,7 @@ import me.rainhouse.qasystem.service.AudioService;
 import me.rainhouse.qasystem.service.ChatMessageService;
 import me.rainhouse.qasystem.service.ChatSessionService;
 import me.rainhouse.qasystem.service.CozeService;
+import me.rainhouse.qasystem.websocket.ChatWebSocketServer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -50,6 +51,17 @@ public class ChatController {
         Long userId = getUserIdOpt(request);
         ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
 
+        // 如果处于人工状态，将消息发给人工即可，不走AI
+        if (session.getStatus() == 1) {
+            saveMessage(session.getId(), 1, 1, query, null);
+            // 通过 WS 通知客服
+            String wsAdminMsg = String.format("{\"type\":\"USER_MSG\", \"sessionId\":%d, \"userId\":%d, \"content\":\"%s\"}", session.getId(), userId, query.replace("\"", "\\\""));
+            if (session.getAdminId() != null) {
+                ChatWebSocketServer.sendMessageToAdmin(String.valueOf(session.getAdminId()), wsAdminMsg);
+            }
+            return Result.success("消息已转交人工客服");
+        }
+
         // 1. 保存用户的文本问题
         saveMessage(session.getId(), 1, 1, query, null);
 
@@ -80,6 +92,16 @@ public class ChatController {
         // 1. (2.2模块) 将用户传上来的音频（Blob）进行语音识别
         String queryText = audioService.speechToText(audioFile);
 
+        // 如果处于人工服务状态，直接发送识别文本给客服
+        if (session.getStatus() == 1) {
+            saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
+            String wsAdminMsg = String.format("{\"type\":\"USER_MSG\", \"sessionId\":%d, \"userId\":%d, \"content\":\"%s(语音)\"}", session.getId(), userId, queryText.replace("\"", "\\\""));
+            if (session.getAdminId() != null) {
+                ChatWebSocketServer.sendMessageToAdmin(String.valueOf(session.getAdminId()), wsAdminMsg);
+            }
+            return Result.success("识别内容已发给人工客服: [" + queryText + "]");
+        }
+
         // 2. 保存用户语音对应的识别结果
         saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
 
@@ -97,8 +119,83 @@ public class ChatController {
     }
 
     /**
-     * 通用的保存消息工具方法
+     * 【2.3模块】用户申请转人工客服
      */
+    @PostMapping("/transfer-to-human")
+    public Result<String> transferToHuman(HttpServletRequest request) {
+        Long userId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
+
+        if (session.getStatus() == 1) {
+            return Result.error("当前已经处于人工客服服务中，请耐心等待回复。");
+        }
+
+        // 尝试分配在线客服
+        String adminIdStr = ChatWebSocketServer.getAvailableAdmin();
+        if (adminIdStr == null) {
+            return Result.error("当前无在线客服，请稍后再试或继续咨询AI助手。");
+        }
+
+        Long adminId = Long.valueOf(adminIdStr);
+
+        // 修改会话状态为转人工
+        session.setStatus(1);
+        session.setAdminId(adminId);
+        chatSessionService.updateById(session);
+
+        // 通过 WebSocket 给分配到的客服发个通知
+        String notification = String.format("{\"type\":\"NEW_TASK\", \"sessionId\":%d, \"userId\":%d, \"msg\":\"用户请求人工介入\"}", session.getId(), userId);
+        ChatWebSocketServer.sendMessageToAdmin(adminIdStr, notification);
+
+        return Result.success("已成功为您转接人工客服，正在排队等待回复...");
+    }
+
+    /**
+     * 【2.3模块】客服在控制台给用户发送回复
+     */
+    @PostMapping("/admin/reply")
+    public Result<String> adminReply(@RequestParam("sessionId") Long sessionId,
+                                     @RequestParam("content") String content,
+                                     HttpServletRequest request) {
+        // 注：此处理应校验登录者是否为有效的Admin角色
+        Long adminId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getById(sessionId);
+
+        if (session == null || session.getStatus() != 1) {
+            return Result.error("会话不存在或并非处于人工服务中。");
+        }
+
+        // 1. 保存客服回复的消息至数据库
+        saveMessage(session.getId(), 3, 1, content, null); // senderType=3(客服), msgType=1(文本)
+
+        // 2. 通过 WebSocket 即时推送给发起提问的用户前端
+        String wsUserMsg = String.format("{\"type\":\"ADMIN_REPLY\", \"adminId\":%d, \"content\":\"%s\"}", adminId, content.replace("\"", "\\\""));
+        ChatWebSocketServer.sendMessageToUser(String.valueOf(session.getUserId()), wsUserMsg);
+
+        return Result.success("回复成功");
+    }
+
+    /**
+     * 【2.3模块】客服结束会话，交还给AI
+     */
+    @PostMapping("/admin/finish")
+    public Result<String> adminFinish(@RequestParam("sessionId") Long sessionId) {
+        ChatSession session = chatSessionService.getById(sessionId);
+        if (session != null && session.getStatus() == 1) {
+            session.setStatus(0); // 0-AI托管
+            session.setAdminId(null);
+            chatSessionService.updateById(session);
+
+            // 推送通知给用户，人工服务已结束
+            String wsUserMsg = "{\"type\":\"SYSTEM_NOTICE\", \"content\":\"人工服务已结束，已为您重新交接给AI托管模式。\"}";
+            ChatWebSocketServer.sendMessageToUser(String.valueOf(session.getUserId()), wsUserMsg);
+
+            return Result.success("已结束人工干预，会话交回AI");
+        }
+        return Result.error("操作失败：该会话不在人工服务状态");
+    }
+
+    // 通用的保存消息工具方法
     private void saveMessage(Long sessionId, Integer senderType, Integer msgType, String content, String mediaUrl) {
         ChatMessage msg = new ChatMessage();
         msg.setSessionId(sessionId);
