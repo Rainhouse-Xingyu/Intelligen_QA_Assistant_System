@@ -1,0 +1,174 @@
+-- ==========================================================
+-- 数据库：llm_qa_sy (智能问答助手系统)
+-- 包含：用户与权限、智能问答与客服、知识库、统计分析、学业帮扶
+-- ==========================================================
+
+CREATE DATABASE IF NOT EXISTS `llm_qa_sy` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `llm_qa_sy`;
+
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- ----------------------------
+-- 1. 用户与权限模块
+-- ----------------------------
+DROP TABLE IF EXISTS `sys_user`;
+CREATE TABLE `sys_user` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `username` varchar(50) NOT NULL COMMENT '登录账号(系统内流转用)',
+  `password` varchar(100) DEFAULT NULL COMMENT '密码(SSO登录时可为空)',
+  `real_name` varchar(50) DEFAULT NULL COMMENT '真实姓名',
+  `role` tinyint(4) NOT NULL DEFAULT '1' COMMENT '角色: 1-学生, 2-教师, 3-管理员',
+  `phone` varchar(20) DEFAULT NULL COMMENT '联系电话',
+  `campus_sso_id` varchar(100) DEFAULT NULL COMMENT '大连东软信息学院一网通SSO唯一标识',
+  `wechat_openid` varchar(100) DEFAULT NULL COMMENT '微信公众号开发OpenID',
+  `avatar_url` varchar(255) DEFAULT NULL COMMENT '专属形象/头像预留',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_username` (`username`),
+  UNIQUE KEY `uk_campus_sso_id` (`campus_sso_id`),
+  UNIQUE KEY `uk_wechat_openid` (`wechat_openid`),
+  KEY `idx_role` (`role`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户表';
+
+-- ----------------------------
+-- 2. 智能问答模块 (对话历史与人工客服)
+-- ----------------------------
+DROP TABLE IF EXISTS `chat_session`;
+CREATE TABLE `chat_session` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint(20) NOT NULL COMMENT '提问用户ID',
+  `status` tinyint(2) DEFAULT '0' COMMENT '会话状态: 0-AI托管, 1-转人工, 2-已结束',
+  `admin_id` bigint(20) DEFAULT NULL COMMENT '接单客服/管理员ID',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '会话开始时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后交互时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话会话表';
+
+DROP TABLE IF EXISTS `chat_message`;
+CREATE TABLE `chat_message` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `session_id` bigint(20) NOT NULL COMMENT '所属会话ID',
+  `sender_type` tinyint(2) NOT NULL COMMENT '发送方: 1-用户, 2-AI, 3-人工客服',
+  `msg_type` tinyint(2) NOT NULL DEFAULT '1' COMMENT '消息类型: 1-文本, 2-语音',
+  `content` text COMMENT '文本内容',
+  `media_url` varchar(255) DEFAULT NULL COMMENT '语音或富媒体文件链接',
+  `intent_tag` varchar(50) DEFAULT NULL COMMENT 'AI识别的意图/分类标签',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_session_id` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='聊天消息记录表';
+
+DROP TABLE IF EXISTS `biz_contact`;
+CREATE TABLE `biz_contact` (
+  `id` int(11) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `biz_module` varchar(50) NOT NULL COMMENT '业务模块(如：选课、重修)',
+  `teacher_name` varchar(50) NOT NULL COMMENT '负责教师姓名',
+  `phone_number` varchar(20) NOT NULL COMMENT '办公座机',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='业务线联系方式表(AI推送用)';
+
+-- ----------------------------
+-- 3. 知识库管理模块
+-- ----------------------------
+DROP TABLE IF EXISTS `kb_document`;
+CREATE TABLE `kb_document` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `file_name` varchar(100) NOT NULL COMMENT '原始文件名(Excel/Word)',
+  `file_url` varchar(255) DEFAULT NULL COMMENT '文件存储地址',
+  `uploader_id` bigint(20) NOT NULL COMMENT '上传者(管理员)ID',
+  `process_status` tinyint(2) DEFAULT '0' COMMENT '解析状态: 0-待解析, 1-解析中, 2-成功, 3-失败',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库源文档表';
+
+DROP TABLE IF EXISTS `kb_qa_entry`;
+CREATE TABLE `kb_qa_entry` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `document_id` bigint(20) DEFAULT NULL COMMENT '来源文档ID(若手动添加则为空)',
+  `question` varchar(500) NOT NULL COMMENT '标准问题',
+  `answer` text NOT NULL COMMENT '标准答案',
+  `status` tinyint(2) DEFAULT '1' COMMENT '状态: 0-禁用, 1-启用',
+  `created_by` bigint(20) DEFAULT NULL COMMENT '创建人ID',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_question` (`question`(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库问答词条表';
+
+-- ----------------------------
+-- 4. 数据统计与推送模块
+-- ----------------------------
+DROP TABLE IF EXISTS `stat_hot_question`;
+CREATE TABLE `stat_hot_question` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `question_text` varchar(500) NOT NULL COMMENT '热点问题文本',
+  `frequency` int(11) DEFAULT '1' COMMENT '提问次数',
+  `stat_date` date NOT NULL COMMENT '统计归属日期',
+  PRIMARY KEY (`id`),
+  KEY `idx_stat_date` (`stat_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提问热点统计表';
+
+DROP TABLE IF EXISTS `unrecognized_query`;
+CREATE TABLE `unrecognized_query` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint(20) DEFAULT NULL COMMENT '提问用户ID',
+  `query_text` varchar(500) NOT NULL COMMENT '无法识别的原始提问',
+  `status` tinyint(2) DEFAULT '0' COMMENT '处理状态: 0-待处理, 1-已入知识库, 2-忽略',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '提问时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='未识别(兜底)问题反馈表';
+
+-- ----------------------------
+-- 5. 学业帮扶模块
+-- ----------------------------
+DROP TABLE IF EXISTS `student_profile`;
+CREATE TABLE `student_profile` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint(20) NOT NULL COMMENT '外键：系统用户表ID(学生)',
+  `masking_id` varchar(50) NOT NULL COMMENT '脱敏ID(传给AI时使用代替真实学号)',
+  `gpa` decimal(4,2) DEFAULT NULL COMMENT '平均绩点',
+  `failed_courses_cnt` int(11) DEFAULT '0' COMMENT '挂科数',
+  `psychological_tag` varchar(100) DEFAULT NULL COMMENT '心理/性格标签(评估后生成)',
+  `risk_level` tinyint(2) DEFAULT '0' COMMENT '风险等级: 0-无风险, 1-低, 2-中, 3-高',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '信息同步时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_id` (`user_id`),
+  UNIQUE KEY `uk_masking_id` (`masking_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生画像(学业与心理)基础表';
+
+DROP TABLE IF EXISTS `academic_warning_record`;
+CREATE TABLE `academic_warning_record` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `student_id` bigint(20) NOT NULL COMMENT '学生用户ID',
+  `term` varchar(20) NOT NULL COMMENT '学期(如: 2026-春)',
+  `warning_reason` text COMMENT '预警分析(大模型生成或规则生成)',
+  `ai_suggested_plan` text COMMENT 'AI生成的帮扶方案',
+  `report_pdf_url` varchar(255) DEFAULT NULL COMMENT '帮扶成效报告PDF存档链接',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '记录生成时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_student_term` (`student_id`,`term`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学业预警与帮扶记录表';
+
+-- ----------------------------
+-- 6. 核心业务视图与其他强化索引约束
+-- ----------------------------
+DROP VIEW IF EXISTS `v_student_academic_profile`;
+CREATE VIEW `v_student_academic_profile` AS
+SELECT 
+    u.id AS user_id,
+    u.username AS student_no,
+    u.real_name,
+    u.campus_sso_id,
+    p.masking_id,
+    p.gpa,
+    p.failed_courses_cnt,
+    p.risk_level,
+    p.psychological_tag
+FROM sys_user u
+JOIN student_profile p ON u.id = p.user_id
+WHERE u.role = 1;
+
+SET FOREIGN_KEY_CHECKS = 1;
