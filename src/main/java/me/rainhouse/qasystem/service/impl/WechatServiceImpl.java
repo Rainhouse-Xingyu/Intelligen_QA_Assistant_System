@@ -9,6 +9,7 @@ import me.chanjar.weixin.mp.bean.message.WxMpXmlOutMessage;
 import me.chanjar.weixin.mp.bean.result.WxMpUser;
 import me.rainhouse.qasystem.common.utils.JwtUtils;
 import me.rainhouse.qasystem.entity.SysUser;
+import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.SysUserService;
 import me.rainhouse.qasystem.service.WechatService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,9 @@ public class WechatServiceImpl implements WechatService {
     @Autowired
     private WxMpService wxMpService;
 
+    @Autowired
+    private CozeService cozeService;
+
     @Override
     public WxMpXmlOutMessage routeMessage(WxMpXmlMessage inMessage) {
         String msgType = inMessage.getMsgType();
@@ -37,12 +41,11 @@ public class WechatServiceImpl implements WechatService {
 
         try {
             if (WxConsts.XmlMsgType.TEXT.equals(msgType)) {
-                // 如果是文本消息，可以将 inMessage.getContent() 发送给 Coze AI 意图网关获取大模型答复
+                // 将用户的本文内容发送给 Coze 意图网关并同步返回
                 String userContent = inMessage.getContent();
                 log.info("收到微信用户 [{}] 的文本消息：{}", fromUser, userContent);
                 
-                // TODO: 这里之后会调用 2.1 Coze意图网关 并返回推理结果，先写个回显
-                replyContent = "AI助手回复: 您说的是「" + userContent + "」吗？我们正在对大模型接口进行对接...";
+                replyContent = cozeService.chat(fromUser, userContent);
 
             } else if (WxConsts.XmlMsgType.EVENT.equals(msgType)) {
                 String eventType = inMessage.getEvent();
@@ -50,9 +53,14 @@ public class WechatServiceImpl implements WechatService {
                     replyContent = "欢迎关注智能教务助手！我们不仅能回答您的问题，还可以为您提供学业帮扶。";
                 }
             } else if (WxConsts.XmlMsgType.VOICE.equals(msgType)) {
-                // TODO: 支持 2.2 语音模态处理
+                // 语音模态处理：微信服务器已经将语音转换为了文本（开启识别的情况下）
                 String recognition = inMessage.getRecognition();
-                replyContent = "听到您的语音内容：" + (recognition != null ? recognition : "无法识别") + "\n正在向大模型网关查询...";
+                if (recognition == null || recognition.isEmpty()) {
+                    replyContent = "抱歉，我没有听清您说的话。";
+                } else {
+                    log.info("收到微信用户 [{}] 的语音识别文本消息：{}", fromUser, recognition);
+                    replyContent = cozeService.chat(fromUser, recognition);
+                }
             }
         } catch (Exception e) {
             log.error("微信消息路由处理异常", e);
