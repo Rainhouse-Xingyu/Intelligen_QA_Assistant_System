@@ -4,6 +4,7 @@ import me.rainhouse.qasystem.common.result.Result;
 import me.rainhouse.qasystem.entity.ChatMessage;
 import me.rainhouse.qasystem.entity.ChatSession;
 import me.rainhouse.qasystem.service.AudioService;
+import me.rainhouse.qasystem.service.BizContactService;
 import me.rainhouse.qasystem.service.ChatMessageService;
 import me.rainhouse.qasystem.service.ChatSessionService;
 import me.rainhouse.qasystem.service.CozeService;
@@ -30,6 +31,9 @@ public class ChatController {
 
     @Autowired
     private ChatMessageService chatMessageService;
+
+    @Autowired
+    private BizContactService bizContactService;
 
     // 从请求 attributes 中获取 userId (由 AuthInterceptor 解析 JWT 后放入)
     private Long getUserIdOpt(HttpServletRequest request) {
@@ -67,6 +71,9 @@ public class ChatController {
 
         // 2. 将问题通过 2.1 模块的 Coze 意图网关发给 AI
         String aiAnswer = cozeService.chat(String.valueOf(userId), query);
+
+        // 【2.4模块】业务联动自动推送 API：检查关键字并追加教务老师联系方式
+        aiAnswer = bizContactService.appendContactInfoIfMatch(query, aiAnswer);
 
         // 3. 将 AI 答案存入库
         String mediaUrl = null;
@@ -107,6 +114,9 @@ public class ChatController {
 
         // 3. (2.1模块) 到 AI 网关进行推理
         String aiAnswer = cozeService.chat(String.valueOf(userId), queryText);
+
+        // 【2.4模块】业务联动自动推送 API：对语音识别出的文本做关键联动匹配
+        aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, aiAnswer);
 
         // 4. (2.2模块) 默认对语音发问都生成对应的语音回答，以打造完整的双模态极佳体验
         String responseMediaUrl = audioService.textToSpeech(aiAnswer);
