@@ -9,6 +9,7 @@ import me.rainhouse.qasystem.service.ChatMessageService;
 import me.rainhouse.qasystem.service.ChatSessionService;
 import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.StatHotQuestionService;
+import me.rainhouse.qasystem.service.UnrecognizedQueryService;
 import me.rainhouse.qasystem.websocket.ChatWebSocketServer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -38,6 +41,9 @@ public class ChatController {
 
     @Autowired
     private StatHotQuestionService statHotQuestionService;
+
+    @Autowired
+    private UnrecognizedQueryService unrecognizedQueryService;
 
     // 从请求 attributes 中获取 userId (由 AuthInterceptor 解析 JWT 后放入)
     private Long getUserIdOpt(HttpServletRequest request) {
@@ -231,5 +237,27 @@ public class ChatController {
         s.setId(sessionId);
         s.setUpdatedAt(LocalDateTime.now());
         chatSessionService.updateById(s);
+    }
+
+    /**
+     * 【4.2模块】主动推送热点问题
+     * 适合在用户初次打开对话窗口时拉取，作为快速点击的 Suggestion 气泡
+     */
+    @GetMapping("/suggested-questions")
+    public Result<List<Map<String, Object>>> getSuggestedQuestions() {
+        // 直接取近7天热度最高的5个提问词推荐给前端
+        return Result.success(statHotQuestionService.getHotQuestions(7, 5));
+    }
+
+    /**
+     * 【4.3模块】上报未识别/兜底提问
+     * 机器人回答 "我不知道" 之类的兜底话术后，给用户一个“点踩反馈/上报错漏”按钮
+     */
+    @PostMapping("/report-unrecognized")
+    public Result<String> reportUnrecognized(@RequestParam("query") String query,
+                                             HttpServletRequest request) {
+        Long userId = getUserIdOpt(request);
+        unrecognizedQueryService.recordUnrecognized(userId, query);
+        return Result.success("已记录反馈，管理员将尽快根据您的提问完善系统知识库");
     }
 }
