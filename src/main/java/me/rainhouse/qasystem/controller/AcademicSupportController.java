@@ -42,4 +42,17 @@ public class AcademicSupportController {
         academicSupportService.saveOrUpdateProfile(profile);
         return Result.success("画像数据更新成功");
     }
+
+    /**
+     * 【5.3模块】辅导员/管理员一键生成帮扶成效报告PDF
+     */
+    @PostMapping("/generate-pdf-report")
+    public Result<String> generatePdfReport(@RequestParam("recordId") Long recordId) {
+        try {
+            String pdfUrl = academicSupportService.generateEffectivenessReportPdf(recordId);
+            return Result.success(pdfUrl);
+        } catch (Exception e) {
+            return Result.error("报告生成失败: " + e.getMessage());
+        }
+    }
 }

@@ -20,4 +20,12 @@ public interface AcademicSupportService extends IService<AcademicWarningRecord> 
      * 更新或插入学生基础画像数据（辅助测试使用）
      */
     void saveOrUpdateProfile(StudentProfile profile);
+
+    /**
+     * 【5.3模块】帮扶成效报告自动化生成（模拟生成可下载的报告URL）
+     * 
+     * @param recordId AcademicWarningRecord 的主键ID
+     * @return PDF文档的网络访问URL
+     */
+    String generateEffectivenessReportPdf(Long recordId);
 }
