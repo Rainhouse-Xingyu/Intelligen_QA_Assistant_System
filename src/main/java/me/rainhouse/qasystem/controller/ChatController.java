@@ -8,6 +8,7 @@ import me.rainhouse.qasystem.service.BizContactService;
 import me.rainhouse.qasystem.service.ChatMessageService;
 import me.rainhouse.qasystem.service.ChatSessionService;
 import me.rainhouse.qasystem.service.CozeService;
+import me.rainhouse.qasystem.service.StatHotQuestionService;
 import me.rainhouse.qasystem.websocket.ChatWebSocketServer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -35,6 +36,9 @@ public class ChatController {
     @Autowired
     private BizContactService bizContactService;
 
+    @Autowired
+    private StatHotQuestionService statHotQuestionService;
+
     // 从请求 attributes 中获取 userId (由 AuthInterceptor 解析 JWT 后放入)
     private Long getUserIdOpt(HttpServletRequest request) {
         Object userIdObj = request.getAttribute("userId");
@@ -52,6 +56,9 @@ public class ChatController {
                                    @RequestParam(value = "needTts", defaultValue = "false") Boolean needTts,
                                    HttpServletRequest request) {
         
+        // 埋点统计（4.1 模块）
+        statHotQuestionService.recordQuestion(query);
+
         Long userId = getUserIdOpt(request);
         ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
 
@@ -98,6 +105,9 @@ public class ChatController {
 
         // 1. (2.2模块) 将用户传上来的音频（Blob）进行语音识别
         String queryText = audioService.speechToText(audioFile);
+        
+        // 埋点统计（4.1 模块）
+        statHotQuestionService.recordQuestion(queryText);
 
         // 如果处于人工服务状态，直接发送识别文本给客服
         if (session.getStatus() == 1) {
