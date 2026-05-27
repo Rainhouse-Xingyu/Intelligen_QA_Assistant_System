@@ -5,3 +5,6 @@ dist/
 target/
 .idea/
 .vscode/
+
+# Local secrets, never commit to public repositories
+backend/config/application-secrets.properties
