@@ -59,20 +59,12 @@ public class AcademicSupportServiceImpl extends ServiceImpl<AcademicWarningRecor
             return null; // 不需要重点帮扶，就不生成预警表单报告了
         }
 
-        // 3. 构建发送给 AI 模型的 Prompt（组合隐私脱敏信息）
-        // 重点：不发送真名、真实System ID，只发送脱敏 maskingId
-        String prompt = String.format(
-            "请作为高校学业指导专家，为代号为【%s】的学生撰写一份结构化学业预警分析和帮扶干预方案。\n" +
-            "学生当前情况：GPA %.2f，不及格累计门数：%d 门，当前性格标签备注为：%s。\n" +
-            "请输出两部分：\n" +
-            "1. 预警原因深度分析（30-50字）\n" +
-            "2. 具体帮扶动作方案（分点说明，可操作性强，例如针对心理或挂科提出补救意见）\n" +
-            "使用 Markdown 格式返回。",
-            profile.getMaskingId(), gpa, failedCnt, profile.getPsychologicalTag() != null ? profile.getPsychologicalTag() : "无"
-        );
-
-        // 4. 调用 Coze AI 获取大模型决策（这里复用大语言模型的推断能力）
-        String aiResult = cozeService.chat(String.valueOf(profile.getUserId()), prompt);
+        // 3. 调用 Custom_Learning_Resources 工作流，只传脱敏后的学生标识。
+        String fakeStudentId = profile.getMaskingId();
+        String weakKnowledge = String.format("GPA %.2f，不及格累计门数：%d 门，需重点补齐挂科课程与前置基础知识", gpa, failedCnt);
+        String warningLevel = calculatedRisk == 3 ? "红色预警" : "黄色预警";
+        String surveyIndicator = profile.getPsychologicalTag() != null ? profile.getPsychologicalTag() : "暂无问卷异常指标";
+        String aiResult = cozeService.generateLearningResources(fakeStudentId, weakKnowledge, warningLevel, surveyIndicator);
         
         // 简单截取或按格式拆分返回结果入库 (这里简化，整段存入计划中)
         AcademicWarningRecord record = new AcademicWarningRecord();

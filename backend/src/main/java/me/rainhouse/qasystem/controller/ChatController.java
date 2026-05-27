@@ -88,20 +88,8 @@ public class ChatController {
         // 1. 保存用户的文本问题
         saveMessage(session.getId(), 1, 1, query, null);
 
-        // 【5.2模块】学生画像标签系统与AI共情
-        // 在发给 Coze 之前，查出该学生的性格标签，拼接到 query 前面 (或者通过System Prompt的方式，这里用前缀附加解决)
-        String finalQueryToAi = query;
-        QueryWrapper<StudentProfile> pqw = new QueryWrapper<>();
-        pqw.eq("user_id", userId);
-        StudentProfile profile = studentProfileMapper.selectOne(pqw);
-        if (profile != null && profile.getPsychologicalTag() != null && !profile.getPsychologicalTag().trim().isEmpty()) {
-            // 拼接隐式的画像提示词，增强 Coze AI 的共情质量
-            finalQueryToAi = String.format("【系统隐藏设定：该提问学生的心理/性格标签为：%s。请你在回复时体现出应有的辅导员式的人文关怀和共情语气。】\n用户提问内容：%s", 
-                    profile.getPsychologicalTag(), query);
-        }
-
         // 2. 将问题通过 2.1 模块的 Coze 意图网关发给 AI
-        String aiAnswer = cozeService.chat(String.valueOf(userId), finalQueryToAi);
+        String aiAnswer = cozeService.chat(String.valueOf(userId), query);
 
         // 【2.4模块】业务联动自动推送 API：检查关键字并追加教务老师联系方式
         aiAnswer = bizContactService.appendContactInfoIfMatch(query, aiAnswer);
@@ -146,18 +134,8 @@ public class ChatController {
         // 2. 保存用户语音对应的识别结果
         saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
 
-        // 【5.2模块】学生画像标签系统与AI共情 (语音模式同样支持)
-        String finalQueryToAi = queryText;
-        QueryWrapper<StudentProfile> pqw = new QueryWrapper<>();
-        pqw.eq("user_id", userId);
-        StudentProfile profile = studentProfileMapper.selectOne(pqw);
-        if (profile != null && profile.getPsychologicalTag() != null && !profile.getPsychologicalTag().trim().isEmpty()) {
-            finalQueryToAi = String.format("【系统隐藏设定：该提问学生的心理/性格标签为：%s。请在回复时体现出人文关怀和共情语气。】\n用户提问内容：%s", 
-                    profile.getPsychologicalTag(), queryText);
-        }
-
         // 3. (2.1模块) 到 AI 网关进行推理
-        String aiAnswer = cozeService.chat(String.valueOf(userId), finalQueryToAi);
+        String aiAnswer = cozeService.chat(String.valueOf(userId), queryText);
 
         // 【2.4模块】业务联动自动推送 API：对语音识别出的文本做关键联动匹配
         aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, aiAnswer);
@@ -170,6 +148,30 @@ public class ChatController {
 
         // 前端拿到这个返回对象后，可以直接展示 aiAnswer 文字，同时通过 responseMediaUrl 利用 AVKit 播报。
         return Result.success("识别内容: [" + queryText + "] \nAI回复: " + aiAnswer + " \n播放地址: " + responseMediaUrl);
+    }
+
+    /**
+     * 调用 Psychological_Counseling 工作流，接收 reply_text 与 stress_level 输出。
+     */
+    @PostMapping("/psychological")
+    public Result<String> psychologicalCounseling(@RequestParam("studentMsg") String studentMsg,
+                                                  HttpServletRequest request) {
+        Long userId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
+
+        saveMessage(session.getId(), 1, 1, studentMsg, null);
+
+        QueryWrapper<StudentProfile> pqw = new QueryWrapper<>();
+        pqw.eq("user_id", userId);
+        StudentProfile profile = studentProfileMapper.selectOne(pqw);
+        String studentIdForCoze = profile != null && profile.getMaskingId() != null
+                ? profile.getMaskingId()
+                : String.valueOf(userId);
+
+        String aiAnswer = cozeService.psychologicalCounseling(studentIdForCoze, studentMsg);
+        saveMessage(session.getId(), 2, 1, aiAnswer, null);
+
+        return Result.success(aiAnswer);
     }
 
     /**
