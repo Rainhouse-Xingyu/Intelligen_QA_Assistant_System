@@ -132,7 +132,7 @@ CREATE TABLE `student_profile` (
   `gpa` decimal(4,2) DEFAULT NULL COMMENT '平均绩点',
   `failed_courses_cnt` int(11) DEFAULT '0' COMMENT '挂科数',
   `psychological_tag` varchar(100) DEFAULT NULL COMMENT '心理/性格标签(评估后生成)',
-  `risk_level` tinyint(2) DEFAULT '0' COMMENT '风险等级: 0-无风险, 1-低, 2-中, 3-高',
+  `risk_level` tinyint(2) DEFAULT '0' COMMENT '风险等级: 0-无风险, 1-橙色预警, 2-红色预警',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '信息同步时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`),
