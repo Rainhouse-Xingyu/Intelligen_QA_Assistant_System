@@ -129,11 +129,13 @@ CREATE TABLE `student_profile` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` bigint(20) NOT NULL COMMENT '外键：系统用户表ID(学生)',
   `masking_id` varchar(50) NOT NULL COMMENT '脱敏ID(传给AI时使用代替真实学号)',
-  `gpa` decimal(4,2) DEFAULT NULL COMMENT '平均绩点',
+  `gpa` decimal(4,2) DEFAULT NULL COMMENT '学分绩点',
+  `required_gpa` decimal(4,2) DEFAULT NULL COMMENT '学分绩点',
   `failed_courses_cnt` int(11) DEFAULT '0' COMMENT '挂科数',
   `psychological_tag` varchar(100) DEFAULT NULL COMMENT '心理/性格标签(评估后生成)',
   `risk_level` tinyint(2) DEFAULT '0' COMMENT '风险等级: 0-无风险, 1-橙色预警, 2-红色预警',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '信息同步时间',
+  `counselor` varchar(50) DEFAULT NULL COMMENT '素质教师姓名',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`),
   UNIQUE KEY `uk_masking_id` (`masking_id`)
@@ -148,6 +150,7 @@ CREATE TABLE `academic_warning_record` (
   `ai_suggested_plan` text COMMENT 'AI生成的帮扶方案',
   `report_pdf_url` varchar(255) DEFAULT NULL COMMENT '帮扶成效报告PDF存档链接',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '记录生成时间',
+  `created_user` varchar(50) DEFAULT NULL COMMENT '记录生成人',
   PRIMARY KEY (`id`),
   KEY `idx_student_term` (`student_id`,`term`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学业预警与帮扶记录表';
@@ -174,11 +177,11 @@ WHERE u.role = 1;
 DROP TABLE IF EXISTS `student_growth_archive`;
 CREATE TABLE `student_growth_archive` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT '主键，自动递增',
-  `real_student_id` varchar(50) NOT NULL COMMENT '学校真实学号（供老师在管理后台检索筛选）',
-  `fake_student_id` varchar(50) NOT NULL COMMENT '传给 Coze 的假学号（用于审计对账和云端标识）',
+  `real_student_id` varchar(50) NOT NULL COMMENT '真实学号（供老师在管理后台检索筛选）',
+  `masking_id` varchar(50) NOT NULL COMMENT '脱敏ID(传给AI时使用代替真实学号)',
   `warning_level` varchar(20) DEFAULT NULL COMMENT '对应的预警级别',
   `survey_indicator` varchar(255) DEFAULT NULL COMMENT '调查问卷暴露的各项指标变化',
-  `help_plan` text COMMENT 'Coze 大模型生成的个性化一对一帮扶方案',
+  `help_plan` text COMMENT 'Coze大模型生成的个性化一对一帮扶方案',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '记录生成时间，方便以学期为单位导出成效报告',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生成长档案表';
