@@ -171,4 +171,16 @@ FROM sys_user u
 JOIN student_profile p ON u.id = p.user_id
 WHERE u.role = 1;
 
+DROP TABLE IF EXISTS `student_growth_archive`;
+CREATE TABLE `student_growth_archive` (
+  `id` int(11) NOT NULL AUTO_INCREMENT COMMENT '主键，自动递增',
+  `real_student_id` varchar(50) NOT NULL COMMENT '学校真实学号（供老师在管理后台检索筛选）',
+  `fake_student_id` varchar(50) NOT NULL COMMENT '传给 Coze 的假学号（用于审计对账和云端标识）',
+  `warning_level` varchar(20) DEFAULT NULL COMMENT '对应的预警级别',
+  `survey_indicator` varchar(255) DEFAULT NULL COMMENT '调查问卷暴露的各项指标变化',
+  `help_plan` text COMMENT 'Coze 大模型生成的个性化一对一帮扶方案',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '记录生成时间，方便以学期为单位导出成效报告',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生成长档案表';
+
 SET FOREIGN_KEY_CHECKS = 1;
