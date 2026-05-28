@@ -24,4 +24,7 @@ public class AcademicWarningRecord {
     
     private String reportPdfUrl;
     private LocalDateTime createdAt;
+    
+    // 记录生成人
+    private String createdUser;
 }

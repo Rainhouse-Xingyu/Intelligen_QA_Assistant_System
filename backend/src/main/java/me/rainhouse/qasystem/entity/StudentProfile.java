@@ -19,11 +19,16 @@ public class StudentProfile {
     private String maskingId;
     
     private BigDecimal gpa;
+    // 所需学分绩点
+    private BigDecimal requiredGpa;
     private Integer failedCoursesCnt;
     private String psychologicalTag;
     
-    // 风险等级: 0-无风险, 1-低, 2-中, 3-高
+    // 风险等级: 0-无风险, 1-橙色预警, 2-红色预警
     private Integer riskLevel;
     
     private LocalDateTime updatedAt;
+    
+    // 素质教师姓名
+    private String counselor;
 }

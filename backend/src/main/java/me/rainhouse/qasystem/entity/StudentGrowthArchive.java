@@ -26,9 +26,9 @@ public class StudentGrowthArchive {
     private String realStudentId;
 
     /**
-     * 传给 Coze 的假学号（用于审计对账和云端标识）
+     * 脱敏ID(传给AI时使用代替真实学号)
      */
-    private String fakeStudentId;
+    private String maskingId;
 
     /**
      * 对应的预警级别
