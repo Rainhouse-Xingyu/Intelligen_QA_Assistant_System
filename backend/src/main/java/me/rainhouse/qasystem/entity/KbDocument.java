@@ -16,5 +16,6 @@ public class KbDocument {
     private String fileUrl;
     private Long uploaderId;
     private Integer processStatus; // 0-待解析, 1-解析中, 2-成功, 3-失败
+    private String processMessage;
     private LocalDateTime createdAt;
 }

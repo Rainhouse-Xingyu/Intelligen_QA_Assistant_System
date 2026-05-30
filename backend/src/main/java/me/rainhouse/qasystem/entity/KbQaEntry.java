@@ -16,6 +16,8 @@ public class KbQaEntry {
     private String question;
     private String answer;
     private Integer status; // 0-禁用, 1-启用
+    private String moduleType;
+    private String sourceType;
     private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

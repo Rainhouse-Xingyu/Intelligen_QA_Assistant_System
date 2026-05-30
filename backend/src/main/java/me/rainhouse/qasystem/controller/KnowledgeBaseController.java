@@ -3,8 +3,7 @@ package me.rainhouse.qasystem.controller;
 import me.rainhouse.qasystem.common.result.Result;
 import me.rainhouse.qasystem.entity.KbDocument;
 import me.rainhouse.qasystem.entity.KbQaEntry;
-import me.rainhouse.qasystem.service.KbDocumentService;
-import me.rainhouse.qasystem.service.KbQaEntryService;
+import me.rainhouse.qasystem.service.KnowledgeBaseService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,10 +16,7 @@ import java.util.List;
 public class KnowledgeBaseController {
 
     @Autowired
-    private KbDocumentService kbDocumentService;
-
-    @Autowired
-    private KbQaEntryService kbQaEntryService;
+    private KnowledgeBaseService knowledgeBaseService;
 
     // 从请求 attributes 中获取 userId (模拟后台管理员)
     private Long getAdminIdOpt(HttpServletRequest request) {
@@ -32,31 +28,41 @@ public class KnowledgeBaseController {
     }
 
     /**
-     * 【3.1模块】基于 Apache POI 上传并解析文件
+     * 【3.1模块】上传并解析 Word/Excel/PDF/TXT 文件，清洗为 FAQ 后落库。
      */
     @PostMapping("/upload")
-    public Result<KbDocument> uploadDocument(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
-        String filename = file.getOriginalFilename();
-        if (filename == null || !filename.endsWith(".xlsx")) {
-            return Result.error("当前仅支持解析 .xlsx 类型的 Excel 文件。");
-        }
-
-        Long adminId = getAdminIdOpt(request);
-        KbDocument doc = kbDocumentService.uploadAndParse(file, adminId);
-        
-        if (doc.getProcessStatus() == 2) {
-            return Result.success(doc);
-        } else {
-            return Result.error("文件解析失败，请检查文件格式是否规范。");
+    public Result<KbDocument> uploadDocument(@RequestParam("file") MultipartFile file,
+                                             @RequestParam(value = "moduleType", required = false) String moduleType,
+                                             HttpServletRequest request) {
+        try {
+            Long adminId = getAdminIdOpt(request);
+            KbDocument doc = knowledgeBaseService.importDocument(file, adminId, moduleType);
+            if (doc.getProcessStatus() == 2) {
+                return Result.success(doc);
+            }
+            return Result.error(doc.getProcessMessage() != null ? doc.getProcessMessage() : "文件解析失败");
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
         }
     }
 
     /**
-     * 【3.2模块】查询所有已落库的问答词条
+     * 【3.1模块】查询文档解析记录。
+     */
+    @GetMapping("/documents")
+    public Result<List<KbDocument>> listDocuments(@RequestParam(value = "processStatus", required = false) Integer processStatus) {
+        return Result.success(knowledgeBaseService.listDocuments(processStatus));
+    }
+
+    /**
+     * 【3.2模块】查询已落库的问答词条，支持关键字、模块、状态、来源过滤。
      */
     @GetMapping("/entries")
-    public Result<List<KbQaEntry>> listEntries() {
-        return Result.success(kbQaEntryService.list());
+    public Result<List<KbQaEntry>> listEntries(@RequestParam(value = "keyword", required = false) String keyword,
+                                               @RequestParam(value = "moduleType", required = false) String moduleType,
+                                               @RequestParam(value = "status", required = false) Integer status,
+                                               @RequestParam(value = "sourceType", required = false) String sourceType) {
+        return Result.success(knowledgeBaseService.listEntries(keyword, moduleType, status, sourceType));
     }
 
     /**
@@ -64,24 +70,25 @@ public class KnowledgeBaseController {
      */
     @PutMapping("/entries")
     public Result<String> updateEntry(@RequestBody KbQaEntry kbQaEntry) {
-        if (kbQaEntry.getId() == null) {
-            return Result.error("缺少词条ID");
+        try {
+            knowledgeBaseService.updateEntry(kbQaEntry);
+            return Result.success("词条更新成功");
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
         }
-        kbQaEntryService.updateById(kbQaEntry);
-        // 此处可调用 Coze OpenAPI 进行工作流知识库同步更新，以便真正生效
-        return Result.success("词条更新成功");
     }
 
     /**
      * 【3.2模块】手动逐条新增知识库问答
      */
     @PostMapping("/entries")
-    public Result<String> createEntry(@RequestBody KbQaEntry kbQaEntry, HttpServletRequest request) {
-        Long adminId = getAdminIdOpt(request);
-        kbQaEntry.setCreatedBy(adminId);
-        kbQaEntryService.save(kbQaEntry);
-        // 此处亦可调用 Coze OpenAPI 往远端知识库添加记录
-        return Result.success("词条创建成功");
+    public Result<KbQaEntry> createEntry(@RequestBody KbQaEntry kbQaEntry, HttpServletRequest request) {
+        try {
+            Long adminId = getAdminIdOpt(request);
+            return Result.success(knowledgeBaseService.createEntry(kbQaEntry, adminId));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     /**
@@ -89,11 +96,7 @@ public class KnowledgeBaseController {
      */
     @DeleteMapping("/entries/{id}")
     public Result<String> disableEntry(@PathVariable Long id) {
-        KbQaEntry entry = kbQaEntryService.getById(id);
-        if (entry != null) {
-            // 逻辑删除或禁用
-            entry.setStatus(0);
-            kbQaEntryService.updateById(entry);
+        if (knowledgeBaseService.disableEntry(id)) {
             return Result.success("词条已成功禁用/删除");
         }
         return Result.error("词条不存在");
