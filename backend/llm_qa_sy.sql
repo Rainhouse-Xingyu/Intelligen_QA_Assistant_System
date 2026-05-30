@@ -43,6 +43,7 @@ CREATE TABLE `chat_session` (
   `admin_id` bigint(20) DEFAULT NULL COMMENT '接单客服/管理员ID',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '会话开始时间',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后交互时间',
+  `answer_source` varchar(20) DEFAULT 'AI' COMMENT '答案来源: FAQ/RAG/Coze/人工',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话会话表';
 
@@ -80,6 +81,7 @@ CREATE TABLE `kb_document` (
   `file_url` varchar(255) DEFAULT NULL COMMENT '文件存储地址',
   `uploader_id` bigint(20) NOT NULL COMMENT '上传者(管理员)ID',
   `process_status` tinyint(2) DEFAULT '0' COMMENT '解析状态: 0-待解析, 1-解析中, 2-成功, 3-失败',
+  `process_message` varchar(500) DEFAULT NULL COMMENT '解析结果说明',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库源文档表';
@@ -91,6 +93,8 @@ CREATE TABLE `kb_qa_entry` (
   `question` varchar(500) NOT NULL COMMENT '标准问题',
   `answer` text NOT NULL COMMENT '标准答案',
   `status` tinyint(2) DEFAULT '1' COMMENT '状态: 0-禁用, 1-启用',
+  `module_type` varchar(50) DEFAULT NULL COMMENT '所属模块(考务通知/教学运行/学业帮扶/心理辅导)',
+  `source_type` varchar(20) DEFAULT 'manual' COMMENT '来源类型: FAQ/Word/Excel/人工录入/AI生成',
   `created_by` bigint(20) DEFAULT NULL COMMENT '创建人ID',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -104,22 +108,29 @@ CREATE TABLE `kb_qa_entry` (
 DROP TABLE IF EXISTS `stat_hot_question`;
 CREATE TABLE `stat_hot_question` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `question_text` varchar(500) NOT NULL COMMENT '热点问题文本',
+  `question_text` varchar(500) NOT NULL COMMENT '标准问题',
+  `answer_text` text COMMENT '标准答案',
+  `module_type` varchar(50) DEFAULT NULL COMMENT '模块类型(考务通知/教学运行/学业帮扶)',
   `frequency` int(11) DEFAULT '1' COMMENT '提问次数',
-  `stat_date` date NOT NULL COMMENT '统计归属日期',
+  `last_hit_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '最后命中时间',
+  `stat_date` date NOT NULL COMMENT '统计日期',
   PRIMARY KEY (`id`),
-  KEY `idx_stat_date` (`stat_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提问热点统计表';
+  KEY `idx_stat_date` (`stat_date`),
+  KEY `idx_frequency` (`frequency`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='热点问题统计表';
 
 DROP TABLE IF EXISTS `unrecognized_query`;
-CREATE TABLE `unrecognized_query` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `user_id` bigint(20) DEFAULT NULL COMMENT '提问用户ID',
-  `query_text` varchar(500) NOT NULL COMMENT '无法识别的原始提问',
-  `status` tinyint(2) DEFAULT '0' COMMENT '处理状态: 0-待处理, 1-已入知识库, 2-忽略',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '提问时间',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='未识别(兜底)问题反馈表';
+CREATE TABLE unrecognized_query (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    question_text TEXT COMMENT '未命中的问题',
+    module_type VARCHAR(50) COMMENT '所属模块',
+    top_score DECIMAL(5,4) COMMENT '最高匹配分数',
+    frequency INT DEFAULT 1 COMMENT '出现次数',
+    status TINYINT DEFAULT 0 COMMENT '0未处理 1已处理',
+    process_user BIGINT COMMENT '处理管理员',
+    process_time DATETIME COMMENT '处理时间',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
 -- ----------------------------
 -- 5. 学业帮扶模块
@@ -187,3 +198,50 @@ CREATE TABLE `student_growth_archive` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生成长档案表';
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ----------------------------
+-- 7. 原始问题表
+-- ----------------------------
+CREATE TABLE `question_raw` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20),
+  `session_id` bigint(20),
+  `original_question` text NOT NULL COMMENT '学生原始提问',
+  `module_type` varchar(50) COMMENT '学生选择模块',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='原始问题记录表';
+
+-- ----------------------------
+-- 8. 问题命中记录表
+-- ----------------------------
+CREATE TABLE `question_hit_record` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20),
+  `session_id` bigint(20),
+  `original_question` text,
+  `rewrite_question` text COMMENT '改写后的标准问题',
+  `module_type` varchar(50) COMMENT '所属模块',
+  `top_score` decimal(5,4) COMMENT '向量检索最高匹配分数',
+  `hit_status` tinyint(2) DEFAULT 0 COMMENT '0未命中 1弱命中 2强命中',
+  `knowledge_id` bigint(20) COMMENT '命中的知识库条目ID(kb_qa_entry.id)',
+  `response_time_ms` bigint(20) COMMENT '响应时间(毫秒)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='RAG命中记录表';
+
+-- ----------------------------
+-- 9. 心理咨询模块
+-- ----------------------------
+CREATE TABLE psychological_chat_record (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL COMMENT '学生ID',
+  session_id BIGINT COMMENT '关联会话',
+  risk_level TINYINT DEFAULT 0
+  COMMENT '0正常 1关注 2高风险',
+  user_message TEXT
+  COMMENT '学生输入',
+  ai_response TEXT
+  COMMENT 'AI回复',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+);
