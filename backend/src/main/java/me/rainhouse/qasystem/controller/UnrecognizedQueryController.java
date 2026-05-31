@@ -28,7 +28,7 @@ public class UnrecognizedQueryController {
         if (status != null) {
             qw.eq("status", status);
         }
-        qw.orderByDesc("created_at");
+        qw.orderByDesc("create_time");
         
         Page<UnrecognizedQuery> page = unrecognizedQueryService.page(new Page<>(current, size), qw);
         return Result.success(page);
