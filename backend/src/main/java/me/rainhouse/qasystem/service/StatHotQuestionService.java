@@ -21,4 +21,12 @@ public interface StatHotQuestionService extends IService<StatHotQuestion> {
      * @return 包含 name 和 value 的 Map 列表
      */
     List<Map<String, Object>> getHotQuestions(int days, int limit);
+
+    /**
+     * 重建指定日期的热点问题统计。
+     *
+     * @param statDate 统计日期
+     * @return 写入的热点统计条数
+     */
+    int rebuildHotQuestions(java.time.LocalDate statDate);
 }

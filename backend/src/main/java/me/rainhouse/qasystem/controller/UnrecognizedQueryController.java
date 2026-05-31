@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import me.rainhouse.qasystem.common.result.Result;
 import me.rainhouse.qasystem.entity.UnrecognizedQuery;
 import me.rainhouse.qasystem.service.UnrecognizedQueryService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,8 +41,17 @@ public class UnrecognizedQueryController {
     @PostMapping("/update-status")
     public Result<String> updateStatus(
             @RequestParam("id") Long id,
-            @RequestParam("status") Integer status) {
-        unrecognizedQueryService.updateState(id, status);
+            @RequestParam("status") Integer status,
+            HttpServletRequest request) {
+        unrecognizedQueryService.updateState(id, status, getUserIdOpt(request));
         return Result.success("状态更新成功");
+    }
+
+    private Long getUserIdOpt(HttpServletRequest request) {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            return Long.valueOf(userIdObj.toString());
+        }
+        return null;
     }
 }

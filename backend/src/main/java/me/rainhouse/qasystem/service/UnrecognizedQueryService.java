@@ -20,4 +20,6 @@ public interface UnrecognizedQueryService extends IService<UnrecognizedQuery> {
      * @param status 状态 (1-已入库 2-忽略)
      */
     void updateState(Long id, Integer status);
+
+    void updateState(Long id, Integer status, Long processUser);
 }
