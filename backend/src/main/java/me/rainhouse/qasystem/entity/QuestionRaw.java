@@ -8,14 +8,13 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("chat_session")
-public class ChatSession {
+@TableName("question_raw")
+public class QuestionRaw {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long userId;
-    private Integer status; // 0-AI托管, 1-转人工, 2-已结束
-    private Long adminId;
+    private Long sessionId;
+    private String originalQuestion;
+    private String moduleType;
     private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private String answerSource;
 }

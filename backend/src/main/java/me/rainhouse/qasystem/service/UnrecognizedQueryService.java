@@ -12,6 +12,8 @@ public interface UnrecognizedQueryService extends IService<UnrecognizedQuery> {
      */
     void recordUnrecognized(Long userId, String queryText);
 
+    void recordUnrecognized(Long userId, String queryText, String moduleType, Double topScore);
+
     /**
      * 【4.3模块】更新处理状态
      * @param id 记录的主键

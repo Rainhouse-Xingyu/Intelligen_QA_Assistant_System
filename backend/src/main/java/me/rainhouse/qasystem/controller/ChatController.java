@@ -1,8 +1,11 @@
 package me.rainhouse.qasystem.controller;
 
 import me.rainhouse.qasystem.common.result.Result;
+import me.rainhouse.qasystem.common.dto.AiChatRequest;
+import me.rainhouse.qasystem.common.dto.AiChatResponse;
 import me.rainhouse.qasystem.entity.ChatMessage;
 import me.rainhouse.qasystem.entity.ChatSession;
+import me.rainhouse.qasystem.service.AiChatService;
 import me.rainhouse.qasystem.service.AudioService;
 import me.rainhouse.qasystem.service.BizContactService;
 import me.rainhouse.qasystem.service.ChatMessageService;
@@ -15,13 +18,18 @@ import me.rainhouse.qasystem.entity.StudentProfile;
 import me.rainhouse.qasystem.mapper.StudentProfileMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -29,6 +37,9 @@ public class ChatController {
 
     @Autowired
     private CozeService cozeService;
+
+    @Autowired
+    private AiChatService aiChatService;
 
     @Autowired
     private AudioService audioService;
@@ -65,6 +76,7 @@ public class ChatController {
      */
     @PostMapping("/text")
     public Result<String> sendText(@RequestParam("query") String query,
+                                   @RequestParam(value = "moduleType", required = false) String moduleType,
                                    @RequestParam(value = "needTts", defaultValue = "false") Boolean needTts,
                                    HttpServletRequest request) {
         
@@ -88,8 +100,9 @@ public class ChatController {
         // 1. 保存用户的文本问题
         saveMessage(session.getId(), 1, 1, query, null);
 
-        // 2. 将问题通过 2.1 模块的 Coze 意图网关发给 AI
-        String aiAnswer = cozeService.chat(String.valueOf(userId), query);
+        // 2. 进入智能问答核心模块：问题改写、意图分类、向量检索、重排、答案生成
+        AiChatResponse aiChatResponse = aiChatService.chat(userId, session.getId(), query, moduleType);
+        String aiAnswer = aiChatResponse.getAnswer();
 
         // 【2.4模块】业务联动自动推送 API：检查关键字并追加教务老师联系方式
         aiAnswer = bizContactService.appendContactInfoIfMatch(query, aiAnswer);
@@ -102,8 +115,58 @@ public class ChatController {
             mediaUrl = audioService.textToSpeech(aiAnswer);
         }
         saveMessage(session.getId(), 2, needTts ? 2 : 1, aiAnswer, mediaUrl);
+        updateAnswerSource(session.getId(), aiChatResponse.getAnswerSource());
 
         return Result.success(aiAnswer);
+    }
+
+    /**
+     * 智能问答核心模块调试接口，返回改写、分类、命中和引用详情。
+     */
+    @PostMapping("/ai-core")
+    public Result<AiChatResponse> aiCore(@RequestBody AiChatRequest aiChatRequest,
+                                         HttpServletRequest request) {
+        Long userId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
+        AiChatResponse response = aiChatService.chat(
+                userId,
+                session.getId(),
+                aiChatRequest.getQuery(),
+                aiChatRequest.getModuleType()
+        );
+        updateAnswerSource(session.getId(), response.getAnswerSource());
+        return Result.success(response);
+    }
+
+    /**
+     * 智能问答核心模块 SSE 接口，按 metadata、answer、done 事件流式返回。
+     */
+    @PostMapping(value = "/ai-core/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter aiCoreStream(@RequestBody AiChatRequest aiChatRequest,
+                                   HttpServletRequest request) {
+        Long userId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
+        SseEmitter emitter = new SseEmitter(120_000L);
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                AiChatResponse response = aiChatService.chat(
+                        userId,
+                        session.getId(),
+                        aiChatRequest.getQuery(),
+                        aiChatRequest.getModuleType()
+                );
+                updateAnswerSource(session.getId(), response.getAnswerSource());
+                sendMetadata(emitter, response);
+                streamAnswer(emitter, response.getAnswer());
+                emitter.send(SseEmitter.event().name("done").data(response));
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        });
+
+        return emitter;
     }
 
     /**
@@ -134,8 +197,9 @@ public class ChatController {
         // 2. 保存用户语音对应的识别结果
         saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
 
-        // 3. (2.1模块) 到 AI 网关进行推理
-        String aiAnswer = cozeService.chat(String.valueOf(userId), queryText);
+        // 3. 到智能问答核心模块进行推理
+        AiChatResponse aiChatResponse = aiChatService.chat(userId, session.getId(), queryText, null);
+        String aiAnswer = aiChatResponse.getAnswer();
 
         // 【2.4模块】业务联动自动推送 API：对语音识别出的文本做关键联动匹配
         aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, aiAnswer);
@@ -145,6 +209,7 @@ public class ChatController {
 
         // 5. 保存 AI 的回复
         saveMessage(session.getId(), 2, 2, aiAnswer, responseMediaUrl);
+        updateAnswerSource(session.getId(), aiChatResponse.getAnswerSource());
 
         // 前端拿到这个返回对象后，可以直接展示 aiAnswer 文字，同时通过 responseMediaUrl 利用 AVKit 播报。
         return Result.success("识别内容: [" + queryText + "] \nAI回复: " + aiAnswer + " \n播放地址: " + responseMediaUrl);
@@ -267,6 +332,37 @@ public class ChatController {
         s.setId(sessionId);
         s.setUpdatedAt(LocalDateTime.now());
         chatSessionService.updateById(s);
+    }
+
+    private void updateAnswerSource(Long sessionId, String answerSource) {
+        ChatSession s = new ChatSession();
+        s.setId(sessionId);
+        s.setAnswerSource(answerSource);
+        s.setUpdatedAt(LocalDateTime.now());
+        chatSessionService.updateById(s);
+    }
+
+    private void sendMetadata(SseEmitter emitter, AiChatResponse response) throws IOException {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("rewriteQuestion", response.getRewriteQuestion());
+        metadata.put("moduleType", response.getModuleType());
+        metadata.put("hitStatus", response.getHitStatus());
+        metadata.put("hitLabel", response.getHitLabel());
+        metadata.put("topScore", response.getTopScore());
+        metadata.put("answerSource", response.getAnswerSource());
+        emitter.send(SseEmitter.event().name("metadata").data(metadata));
+    }
+
+    private void streamAnswer(SseEmitter emitter, String answer) throws IOException, InterruptedException {
+        if (answer == null) {
+            return;
+        }
+        int chunkSize = 24;
+        for (int i = 0; i < answer.length(); i += chunkSize) {
+            String chunk = answer.substring(i, Math.min(i + chunkSize, answer.length()));
+            emitter.send(SseEmitter.event().name("answer").data(chunk));
+            Thread.sleep(15);
+        }
     }
 
     /**

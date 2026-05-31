@@ -7,6 +7,8 @@ import me.rainhouse.qasystem.service.UnrecognizedQueryService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 @Service
@@ -15,20 +17,23 @@ public class UnrecognizedQueryServiceImpl extends ServiceImpl<UnrecognizedQueryM
     @Async
     @Override
     public void recordUnrecognized(Long userId, String queryText) {
+        recordUnrecognized(userId, queryText, null, null);
+    }
+
+    @Async
+    @Override
+    public void recordUnrecognized(Long userId, String queryText, String moduleType, Double topScore) {
         if (queryText == null || queryText.trim().isEmpty()) {
             return;
         }
-        
+
         UnrecognizedQuery record = new UnrecognizedQuery();
-        record.setUserId(userId);
-        
-        // 限制最大长度存储，防止恶意过长字符串 
-        String safeQuery = queryText.length() > 500 ? queryText.substring(0, 500) : queryText;
-        record.setQueryText(safeQuery);
-        
-        record.setStatus(0); // 默认: 0-待处理
-        record.setCreatedAt(LocalDateTime.now());
-        
+        record.setQuestionText(queryText.trim());
+        record.setModuleType(moduleType);
+        record.setTopScore(topScore == null ? null : BigDecimal.valueOf(topScore).setScale(4, RoundingMode.HALF_UP));
+        record.setFrequency(1);
+        record.setStatus(0);
+        record.setCreateTime(LocalDateTime.now());
         this.save(record);
     }
 
@@ -37,6 +42,7 @@ public class UnrecognizedQueryServiceImpl extends ServiceImpl<UnrecognizedQueryM
         UnrecognizedQuery record = this.getById(id);
         if (record != null) {
             record.setStatus(status);
+            record.setProcessTime(LocalDateTime.now());
             this.updateById(record);
         }
     }
