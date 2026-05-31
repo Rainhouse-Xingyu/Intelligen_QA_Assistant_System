@@ -8,6 +8,7 @@ import me.rainhouse.qasystem.entity.KbQaEntry;
 import me.rainhouse.qasystem.mapper.KbDocumentMapper;
 import me.rainhouse.qasystem.service.KbQaEntryService;
 import me.rainhouse.qasystem.service.KnowledgeBaseService;
+import me.rainhouse.qasystem.service.VectorSearchService;
 import me.rainhouse.qasystem.service.kb.DataCleanService;
 import me.rainhouse.qasystem.service.kb.DocumentParserUtil;
 import me.rainhouse.qasystem.service.kb.FaqItem;
@@ -45,6 +46,9 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
     @Autowired
     private KnowledgeChunker knowledgeChunker;
 
+    @Autowired
+    private VectorSearchService vectorSearchService;
+
     @Override
     public KbDocument importDocument(MultipartFile file, Long uploaderId, String moduleType) {
         validateFile(file);
@@ -80,6 +84,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             }
 
             kbQaEntryService.saveBatch(entries);
+            vectorSearchService.upsertEntries(entries);
             document.setProcessStatus(2);
             document.setProcessMessage("解析成功，已生成 " + entries.size() + " 条知识库词条");
             this.updateById(document);
@@ -142,6 +147,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         entry.setCreatedAt(LocalDateTime.now());
         entry.setUpdatedAt(LocalDateTime.now());
         kbQaEntryService.save(entry);
+        vectorSearchService.upsertEntry(entry);
         return entry;
     }
 
@@ -174,6 +180,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         existing.setUpdatedAt(LocalDateTime.now());
         validateEntry(existing);
         kbQaEntryService.updateById(existing);
+        vectorSearchService.upsertEntry(existing);
         return existing;
     }
 
@@ -189,7 +196,11 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         }
         entry.setStatus(0);
         entry.setUpdatedAt(LocalDateTime.now());
-        return kbQaEntryService.updateById(entry);
+        boolean updated = kbQaEntryService.updateById(entry);
+        if (updated) {
+            vectorSearchService.removeEntry(entry.getId());
+        }
+        return updated;
     }
 
     private void validateFile(MultipartFile file) {
