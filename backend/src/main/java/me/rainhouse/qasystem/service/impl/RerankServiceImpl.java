@@ -2,6 +2,7 @@ package me.rainhouse.qasystem.service.impl;
 
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.RerankService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorDocument;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.stereotype.Service;
@@ -16,18 +17,48 @@ import java.util.Set;
 @Service
 public class RerankServiceImpl implements RerankService {
 
-    public RerankServiceImpl(AiModelProperties aiModelProperties) {
-        // 预留真实 bge-reranker-large 接入点；当前实现保持纯 Java 可运行。
-        String ignoredModelPath = aiModelProperties.getRerankerPath();
+    private final LocalModelClient localModelClient;
+
+    public RerankServiceImpl(AiModelProperties aiModelProperties,
+                             LocalModelClient localModelClient) {
+        this.localModelClient = localModelClient;
+        aiModelProperties.getRerankerPath();
     }
 
     @Override
     public List<VectorSearchResult> rerank(String query, float[] queryVector, List<VectorDocument> candidates, int topK) {
+        if (localModelClient.enabled()) {
+            List<String> documents = candidates.stream()
+                    .map(candidate -> candidate.question() + "\n" + candidate.answer())
+                    .toList();
+            List<Double> scores = localModelClient.rerank(query, documents);
+            return java.util.stream.IntStream.range(0, candidates.size())
+                    .mapToObj(i -> toResult(query, queryVector, candidates.get(i), i < scores.size() ? scores.get(i) : 0.0))
+                    .sorted(Comparator.comparingDouble(VectorSearchResult::finalScore).reversed())
+                    .limit(Math.max(1, topK))
+                    .toList();
+        }
         return candidates.stream()
                 .map(candidate -> toResult(query, queryVector, candidate))
                 .sorted(Comparator.comparingDouble(VectorSearchResult::finalScore).reversed())
                 .limit(Math.max(1, topK))
                 .toList();
+    }
+
+    private VectorSearchResult toResult(String query, float[] queryVector, VectorDocument document, double rerankScore) {
+        double vectorScore = cosine(queryVector, document.vector());
+        double lexicalScore = lexicalScore(query, document.question() + "\n" + document.answer());
+        double finalScore = Math.max(0.0, Math.min(1.0, rerankScore));
+        return new VectorSearchResult(
+                document.knowledgeId(),
+                document.question(),
+                document.answer(),
+                document.moduleType(),
+                document.sourceType(),
+                round(vectorScore),
+                round(lexicalScore),
+                round(finalScore)
+        );
     }
 
     private VectorSearchResult toResult(String query, float[] queryVector, VectorDocument document) {

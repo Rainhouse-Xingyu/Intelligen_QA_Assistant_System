@@ -2,21 +2,31 @@ package me.rainhouse.qasystem.service.impl;
 
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.QueryRewriteService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
 public class QueryRewriteServiceImpl implements QueryRewriteService {
 
-    public QueryRewriteServiceImpl(AiModelProperties aiModelProperties) {
-        // 预留 Qwen3-0.6B 本地改写模型接入点；当前实现保持纯 Java 可运行。
-        String ignoredModelPath = aiModelProperties.getQwenCleanerPath();
+    private final LocalModelClient localModelClient;
+
+    public QueryRewriteServiceImpl(AiModelProperties aiModelProperties,
+                                   LocalModelClient localModelClient) {
+        this.localModelClient = localModelClient;
+        aiModelProperties.getQwenCleanerPath();
     }
 
     @Override
     public String rewrite(String query) {
         if (!StringUtils.hasText(query)) {
             return "";
+        }
+        if (localModelClient.enabled()) {
+            String rewritten = localModelClient.rewrite(query);
+            if (StringUtils.hasText(rewritten)) {
+                return rewritten.length() <= 500 ? rewritten : rewritten.substring(0, 500);
+            }
         }
         String rewritten = query.replace('\r', '\n')
                 .replaceAll("\\s+", " ")

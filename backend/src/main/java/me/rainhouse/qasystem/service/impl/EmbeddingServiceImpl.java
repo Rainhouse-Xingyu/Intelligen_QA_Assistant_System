@@ -2,6 +2,7 @@ package me.rainhouse.qasystem.service.impl;
 
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.EmbeddingService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -16,16 +17,21 @@ import java.util.zip.CRC32;
 public class EmbeddingServiceImpl implements EmbeddingService {
 
     private final int dimension;
+    private final LocalModelClient localModelClient;
 
     public EmbeddingServiceImpl(@Value("${vector.search.dimension:768}") int dimension,
-                                AiModelProperties aiModelProperties) {
+                                AiModelProperties aiModelProperties,
+                                LocalModelClient localModelClient) {
         this.dimension = dimension;
-        // 预留真实 BGE 模型接入点；当前实现保持纯 Java 可运行。
-        String ignoredModelPath = aiModelProperties.getEmbeddingPath();
+        this.localModelClient = localModelClient;
+        aiModelProperties.getEmbeddingPath();
     }
 
     @Override
     public float[] embed(String text) {
+        if (localModelClient.enabled()) {
+            return localModelClient.embed(text);
+        }
         float[] vector = new float[dimension];
         if (!StringUtils.hasText(text)) {
             return vector;

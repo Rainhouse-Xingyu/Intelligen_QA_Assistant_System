@@ -2,18 +2,23 @@ package me.rainhouse.qasystem.service.impl;
 
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
 @Service
 public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
 
-    public AnswerGeneratorServiceImpl(AiModelProperties aiModelProperties) {
-        // 预留 Qwen3.5-4B 本地答案生成模型接入点；当前实现保持纯 Java 可运行。
-        String ignoredModelPath = aiModelProperties.getQwenGeneratorPath();
+    private final LocalModelClient localModelClient;
+
+    public AnswerGeneratorServiceImpl(AiModelProperties aiModelProperties,
+                                      LocalModelClient localModelClient) {
+        this.localModelClient = localModelClient;
+        aiModelProperties.getQwenGeneratorPath();
     }
 
     @Override
@@ -23,6 +28,13 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
         }
         if (searchResponse.hitStatus() == null || searchResponse.hitStatus() == 0) {
             return null;
+        }
+
+        if (localModelClient.enabled()) {
+            String answer = localModelClient.generate(originalQuestion, rewriteQuestion, searchResponse.results());
+            if (StringUtils.hasText(answer)) {
+                return answer;
+            }
         }
 
         VectorSearchResult top = searchResponse.results().get(0);
