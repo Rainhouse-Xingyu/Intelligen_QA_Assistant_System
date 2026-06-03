@@ -1,6 +1,11 @@
 <template>
   <div class="app-container">
-    <Home v-if="currentPage === 'home'" @start-chat="onStartChat" />
+    <Knowledge v-if="currentPage === 'knowledge'" />
+    <VectorPage v-else-if="currentPage === 'vector'" />
+    <Dashboard v-else-if="currentPage === 'dashboard'" />
+    <Academic v-else-if="currentPage === 'academic'" />
+    <AdminChat v-else-if="currentPage === 'admin-chat'" />
+    <Home v-else-if="currentPage === 'home'" @start-chat="onStartChat" />
     <Dialogue 
       v-else-if="currentPage === 'chat'" 
       :initial-question="currentQuestion" 
@@ -14,8 +19,21 @@
 import { ref } from 'vue'
 import Home from './views/home.vue'
 import Dialogue from './views/dialogue.vue'
+import Knowledge from './views/knowledge.vue'
+import VectorPage from './views/vector.vue'
+import Dashboard from './views/dashboard.vue'
+import Academic from './views/academic.vue'
+import AdminChat from './views/chat.vue'
 
-const currentPage = ref('home')
+const routeMap = {
+  '/admin/knowledge': 'knowledge',
+  '/admin/vector': 'vector',
+  '/admin/dashboard': 'dashboard',
+  '/admin/academic': 'academic',
+  '/admin/chat': 'admin-chat'
+}
+
+const currentPage = ref(routeMap[window.location.pathname] || 'home')
 const currentQuestion = ref('')
 const currentCategory = ref('')
 

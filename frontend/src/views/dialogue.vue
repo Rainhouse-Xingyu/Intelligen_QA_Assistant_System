@@ -51,5 +51,5 @@
   </div>
 </template>
 
-<script src="./dialogue.js"></script>
-<style src="./dialogue.css" scoped></style>
+<script src="../js/dialogue.js"></script>
+<style src="../css/dialogue.css" scoped></style>

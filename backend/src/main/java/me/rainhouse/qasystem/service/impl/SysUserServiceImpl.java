@@ -8,11 +8,14 @@ import me.rainhouse.qasystem.mapper.SysUserMapper;
 import me.rainhouse.qasystem.service.CampusSsoService;
 import me.rainhouse.qasystem.service.SysUserService;
 import me.rainhouse.qasystem.common.dto.CampusSsoUserDTO;
+import me.rainhouse.qasystem.common.utils.PasswordUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -26,7 +29,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     private CampusSsoService campusSsoService;
 
     @Override
-    public String login(String username, String password) {
+    public Map<String, Object> login(String username, String password) {
         String failKey = "auth:login_fail:" + username;
         String failCountStr = redisTemplate.opsForValue().get(failKey);
         int failCount = failCountStr != null ? Integer.parseInt(failCountStr) : 0;
@@ -40,7 +43,22 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         queryWrapper.eq("username", username);
         SysUser user = getOne(queryWrapper);
         
-        if (user == null || !user.getPassword().equals(password)) {
+        boolean isFirstLogin = false;
+        boolean isPasswordMatch = false;
+
+        if (user != null) {
+            // 首先判断是否为已加密密码
+            String encryptedInput = PasswordUtils.encrypt(password);
+            if (encryptedInput.equals(user.getPassword())) {
+                isPasswordMatch = true;
+            } else if (password.equals(user.getPassword())) {
+                // 如果未匹配加密，但匹配明文（说明是学校导入初始密码/首次登录）
+                isPasswordMatch = true;
+                isFirstLogin = true;
+            }
+        }
+        
+        if (!isPasswordMatch) {
             // 记录失败次数并设置过期时间
             redisTemplate.opsForValue().increment(failKey);
             if (failCount == 0) {
@@ -52,7 +70,11 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         // 登录成功，清除错误记录
         redisTemplate.delete(failKey);
         
-        return JwtUtils.generateToken(user.getId(), user.getRole());
+        String token = JwtUtils.generateToken(user.getId(), user.getRole());
+        Map<String, Object> result = new HashMap<>();
+        result.put("token", token);
+        result.put("needChangePassword", isFirstLogin);
+        return result;
     }
 
     @Override

@@ -66,5 +66,5 @@
   </div>
 </template>
 
-<script src="./home.js"></script>
-<style src="./home.css" scoped></style>
+<script src="../js/home.js"></script>
+<style src="../css/home.css" scoped></style>
