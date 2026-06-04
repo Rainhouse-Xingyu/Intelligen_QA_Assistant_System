@@ -1,4 +1,5 @@
 import { ref, onMounted, nextTick } from 'vue'
+import { apiForm } from './adminApi'
 
 export default {
   name: 'Dialogue',
@@ -63,33 +64,14 @@ export default {
       scrollToBottom()
 
       try {
-        const params = new URLSearchParams()
-        params.append('query', userText)
-        if (categoryToSend) {
-          params.append('moduleType', categoryToSend)
-        }
-
-        const res = await fetch('/api/chat/text', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: params.toString()
+        const data = await apiForm('/api/chat/text', {
+          query: userText,
+          moduleType: categoryToSend
         })
-        
-        if (res.ok) {
-          const data = await res.json()
-          if (data.code === 200) {
-            messages.value.push({ type: 'bot', content: data.data || '收到。' })
-          } else {
-            messages.value.push({ type: 'bot', content: '服务异常：' + (data.message || '未知错误') })
-          }
-        } else {
-          messages.value.push({ type: 'bot', content: '服务请求失败，状态码：' + res.status })
-        }
+        messages.value.push({ type: 'bot', content: data || '收到。' })
       } catch (e) {
         console.error(e)
-        messages.value.push({ type: 'bot', content: '网络错误，请稍后再试。' })
+        messages.value.push({ type: 'bot', content: e.message || '网络错误，请稍后再试。' })
       } finally {
         isLoading.value = false
         scrollToBottom()

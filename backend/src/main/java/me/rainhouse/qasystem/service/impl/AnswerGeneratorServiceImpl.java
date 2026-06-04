@@ -38,6 +38,9 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
         }
 
         VectorSearchResult top = searchResponse.results().get(0);
+        if (!StringUtils.hasText(top.answer())) {
+            return null;
+        }
         StringBuilder answer = new StringBuilder();
         answer.append(top.answer().trim());
 

@@ -1,9 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { post, get, clearAuth } from '@/utils/api.js'
+import { apiGet, apiJson } from '../js/adminApi'
 
-const router = useRouter()
+const emit = defineEmits(['login-success'])
 
 const username = ref('')
 const password = ref('')
@@ -40,13 +39,13 @@ async function handleLogin() {
   loading.value = true
 
   try {
-    const result = await post('/api/auth/login', {
+    const loginData = await apiJson('/api/auth/login', {
       username: username.value.trim(),
       password: password.value,
     })
 
-    if (result.code === 200 && result.data?.token) {
-      const token = result.data.token
+    if (loginData?.token) {
+      const token = loginData.token
 
       if (rememberMe.value) {
         localStorage.setItem('token', token)
@@ -56,27 +55,17 @@ async function handleLogin() {
         localStorage.removeItem('remembered_user')
       }
 
-      const infoResult = await get('/api/auth/info')
+      const userInfo = await apiGet('/api/auth/info')
+      const storage = rememberMe.value ? localStorage : sessionStorage
+      storage.setItem('user_info', JSON.stringify(userInfo))
+      storage.setItem('user_role', getRoleName(userInfo.role))
 
-      if (infoResult.code === 200) {
-        const userInfo = infoResult.data
-        const storage = rememberMe.value ? localStorage : sessionStorage
-        storage.setItem('user_info', JSON.stringify(userInfo))
-        storage.setItem('user_role', getRoleName(userInfo.role))
-
-        if (userInfo.role === 3) {
-          router.push('/admin/dashboard')
-        } else if (userInfo.role === 2) {
-          router.push('/teacher/dashboard')
-        } else {
-          router.push('/student/chat')
-        }
-      }
+      emit('login-success', userInfo)
     } else {
-      errorMsg.value = result.message || '登录失败，请重试'
+      errorMsg.value = '登录失败，请重试'
     }
   } catch (err) {
-    errorMsg.value = '网络连接失败，请检查服务器是否已启动'
+    errorMsg.value = err.message || '网络连接失败，请检查服务器是否已启动'
     console.error('登录请求出错:', err)
   } finally {
     loading.value = false

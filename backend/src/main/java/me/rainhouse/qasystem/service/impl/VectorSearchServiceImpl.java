@@ -108,9 +108,11 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         float[] queryVector = embeddingService.embed(query);
         List<VectorDocument> candidates = milvusClientManager.search(queryVector, moduleType, topCandidates);
         List<VectorSearchResult> results = rerankService.rerank(query, queryVector, candidates, resultLimit);
+        //获取的是相似度最高的那个结果进行返回
         VectorSearchResult topResult = results.isEmpty() ? null : results.get(0);
 
         double topScore = topResult == null ? 0.0 : topResult.finalScore();
+        // 根据得分和预设的规则引擎判断命中类型 目前是0.7
         HitDecision hitDecision = hitRuleEngine.decide(topScore);
         long responseTimeMs = System.currentTimeMillis() - start;
         saveHitRecord(query, moduleType, userId, sessionId, topResult, hitDecision, responseTimeMs);

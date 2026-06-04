@@ -1,10 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
 export function getToken() {
-  return localStorage.getItem('token') || localStorage.getItem('jwt') || ''
+  return localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('jwt') || ''
 }
 
-function authHeaders(extra = {}) {
+export function authHeaders(extra = {}) {
   const token = getToken()
   return {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -12,11 +12,20 @@ function authHeaders(extra = {}) {
   }
 }
 
-async function parseResponse(response) {
+export async function parseResponse(response) {
   const contentType = response.headers.get('content-type') || ''
-  const payload = contentType.includes('application/json')
-    ? await response.json()
-    : { code: response.ok ? 200 : response.status, message: await response.text(), data: null }
+  const text = await response.text()
+  let payload
+
+  if (contentType.includes('application/json') && text) {
+    payload = JSON.parse(text)
+  } else {
+    payload = {
+      code: response.ok ? 200 : response.status,
+      message: text || response.statusText || `请求失败: ${response.status}`,
+      data: null
+    }
+  }
 
   if (!response.ok || payload.code !== 200) {
     throw new Error(payload.message || `请求失败: ${response.status}`)
@@ -79,4 +88,3 @@ export function wsUrl(path) {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
-

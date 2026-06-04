@@ -12,6 +12,7 @@ import me.rainhouse.qasystem.service.QueryRewriteService;
 import me.rainhouse.qasystem.service.UnrecognizedQueryService;
 import me.rainhouse.qasystem.service.VectorSearchService;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
+import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -61,9 +62,14 @@ public class AiChatServiceImpl implements AiChatService {
         String answerSource = "RAG";
 
         if (!StringUtils.hasText(answer)) {
-            unrecognizedQueryService.recordUnrecognized(userId, query, moduleType, searchResponse.topScore());
-            answer = cozeService.chat(String.valueOf(userId), query);
-            answerSource = "Coze";
+            answer = firstKnowledgeAnswer(searchResponse);
+            if (StringUtils.hasText(answer)) {
+                answerSource = "RAG";
+            } else {
+                unrecognizedQueryService.recordUnrecognized(userId, query, moduleType, searchResponse.topScore());
+                answer = cozeService.chat(String.valueOf(userId), query);
+                answerSource = "Coze";
+            }
         }
 
         return AiChatResponse.builder()
@@ -79,6 +85,17 @@ public class AiChatServiceImpl implements AiChatService {
                 .responseTimeMs(System.currentTimeMillis() - start)
                 .references(searchResponse.results())
                 .build();
+    }
+
+    private String firstKnowledgeAnswer(VectorSearchResponse searchResponse) {
+        if (searchResponse == null || searchResponse.results() == null) {
+            return null;
+        }
+        return searchResponse.results().stream()
+                .map(VectorSearchResult::answer)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
     }
 
     private void saveRawQuestion(Long userId, Long sessionId, String originalQuestion, String moduleType) {
