@@ -50,7 +50,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
     private VectorSearchService vectorSearchService;
 
     @Override
-    public KbDocument importDocument(MultipartFile file, Long uploaderId, String moduleType) {
+    public KbDocument importDocument(MultipartFile file, String uploaderId, String moduleType) {
         validateFile(file);
 
         KbDocument document = new KbDocument();
@@ -134,7 +134,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
 
     @Transactional(rollbackFor = Exception.class)
     @Override
-    public KbQaEntry createEntry(KbQaEntry entry, Long operatorId) {
+    public KbQaEntry createEntry(KbQaEntry entry, String operatorId) {
         validateEntry(entry);
         entry.setId(null);
         entry.setDocumentId(null);

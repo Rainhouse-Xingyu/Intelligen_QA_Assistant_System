@@ -12,5 +12,5 @@ public interface KbDocumentService extends IService<KbDocument> {
      * @param uploaderId 管理员ID
      * @return 上存记录
      */
-    KbDocument uploadAndParse(MultipartFile file, Long uploaderId);
+    KbDocument uploadAndParse(MultipartFile file, String uploaderId);
 }

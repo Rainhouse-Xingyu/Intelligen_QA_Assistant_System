@@ -19,12 +19,12 @@ public class KnowledgeBaseController {
     private KnowledgeBaseService knowledgeBaseService;
 
     // 从请求 attributes 中获取 userId (模拟后台管理员)
-    private Long getAdminIdOpt(HttpServletRequest request) {
+    private String getAdminIdOpt(HttpServletRequest request) {
         Object userIdObj = request.getAttribute("userId");
         if (userIdObj != null) {
-            return Long.valueOf(userIdObj.toString());
+            return userIdObj.toString();
         }
-        return 0L; 
+        return "0";
     }
 
     /**
@@ -35,7 +35,7 @@ public class KnowledgeBaseController {
                                              @RequestParam(value = "moduleType", required = false) String moduleType,
                                              HttpServletRequest request) {
         try {
-            Long adminId = getAdminIdOpt(request);
+            String adminId = getAdminIdOpt(request);
             KbDocument doc = knowledgeBaseService.importDocument(file, adminId, moduleType);
             if (doc.getProcessStatus() == 2) {
                 return Result.success(doc);
@@ -84,7 +84,7 @@ public class KnowledgeBaseController {
     @PostMapping("/entries")
     public Result<KbQaEntry> createEntry(@RequestBody KbQaEntry kbQaEntry, HttpServletRequest request) {
         try {
-            Long adminId = getAdminIdOpt(request);
+            String adminId = getAdminIdOpt(request);
             return Result.success(knowledgeBaseService.createEntry(kbQaEntry, adminId));
         } catch (Exception e) {
             return Result.error(e.getMessage());

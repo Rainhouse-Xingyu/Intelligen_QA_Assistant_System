@@ -9,13 +9,13 @@ import java.util.List;
 
 public interface KnowledgeBaseService extends IService<KbDocument> {
 
-    KbDocument importDocument(MultipartFile file, Long uploaderId, String moduleType);
+    KbDocument importDocument(MultipartFile file, String uploaderId, String moduleType);
 
     List<KbDocument> listDocuments(Integer processStatus);
 
     List<KbQaEntry> listEntries(String keyword, String moduleType, Integer status, String sourceType);
 
-    KbQaEntry createEntry(KbQaEntry entry, Long operatorId);
+    KbQaEntry createEntry(KbQaEntry entry, String operatorId);
 
     KbQaEntry updateEntry(KbQaEntry entry);
 

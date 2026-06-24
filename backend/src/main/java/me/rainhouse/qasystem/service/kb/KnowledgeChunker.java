@@ -16,7 +16,7 @@ public class KnowledgeChunker {
 
     public List<KbQaEntry> chunk(List<FaqItem> faqItems,
                                  Long documentId,
-                                 Long createdBy,
+                                 String createdBy,
                                  String moduleType,
                                  String sourceType) {
         List<KbQaEntry> entries = new ArrayList<>();

@@ -16,7 +16,7 @@ public class KbDocumentServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocum
     private KnowledgeBaseService knowledgeBaseService;
 
     @Override
-    public KbDocument uploadAndParse(MultipartFile file, Long uploaderId) {
+    public KbDocument uploadAndParse(MultipartFile file, String uploaderId) {
         return knowledgeBaseService.importDocument(file, uploaderId, null);
     }
 }
