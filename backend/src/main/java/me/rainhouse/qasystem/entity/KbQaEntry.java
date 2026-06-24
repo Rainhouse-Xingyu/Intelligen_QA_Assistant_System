@@ -18,7 +18,7 @@ public class KbQaEntry {
     private Integer status; // 0-禁用, 1-启用
     private String moduleType;
     private String sourceType;
-    private Long createdBy;
+    private String createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
