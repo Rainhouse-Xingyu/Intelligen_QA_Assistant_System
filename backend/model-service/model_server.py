@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -123,34 +124,41 @@ def health() -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def embedding_bundle():
     path = model_path("bge-base-zh-v1.5")
+    print(f"[加载模型] bge-base-zh-v1.5 (embedding) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
     model = AutoModel.from_pretrained(path, local_files_only=True, trust_remote_code=True).to(DEVICE)
     model.eval()
+    print(f"[模型就绪] bge-base-zh-v1.5 (embedding) on {DEVICE}")
     return tokenizer, model
 
 # 重排序模型：bge-reranker-large，对检索结果按相关性重新打分排序
 @lru_cache(maxsize=1)
 def reranker_bundle():
     path = model_path("bge-reranker-large")
+    print(f"[加载模型] bge-reranker-large (reranker) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
     model = AutoModelForSequenceClassification.from_pretrained(path, local_files_only=True, trust_remote_code=True).to(DEVICE)
     model.eval()
+    print(f"[模型就绪] bge-reranker-large (reranker) on {DEVICE}")
     return tokenizer, model
 
 # 问题改写模型：Qwen3-0.6B，将口语化问题规范化以提升检索命中率
 @lru_cache(maxsize=1)
 def rewrite_bundle():
     path = model_path("Qwen3-0.6B")
+    print(f"[加载模型] Qwen3-0.6B (rewrite) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
     dtype = torch.float16 if DEVICE == "cuda" else torch.float32
     model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=dtype).to(DEVICE)
     model.eval()
+    print(f"[模型就绪] Qwen3-0.6B (rewrite) on {DEVICE}")
     return tokenizer, model
 
 # 答案生成模型：Qwen3.5-4B，基于知识库参考生成最终回答
 @lru_cache(maxsize=1)
 def generator_bundle():
     path = model_path("Qwen3.5-4B")
+    print(f"[加载模型] Qwen3.5-4B (generate) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
     dtype = torch.float16 if DEVICE == "cuda" else torch.float32
     if AutoModelForImageTextToText is not None:
@@ -171,6 +179,7 @@ def generator_bundle():
     else:
         model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=dtype).to(DEVICE)
     model.eval()
+    print(f"[模型就绪] Qwen3.5-4B (generate) on {DEVICE}")
     return tokenizer, model
 
 
@@ -178,9 +187,11 @@ def generator_bundle():
 @lru_cache(maxsize=1)
 def macbert_bundle():
     path = model_path("chinese-macbert-base")
+    print(f"[加载模型] chinese-macbert-base (classify) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
     model = AutoModel.from_pretrained(path, local_files_only=True, trust_remote_code=True).to(DEVICE)
     model.eval()
+    print(f"[模型就绪] chinese-macbert-base (classify) on {DEVICE}")
     return tokenizer, model
 
 
@@ -224,7 +235,12 @@ def chat_generate(tokenizer, model, messages: list[dict[str, str]], max_new_toke
         )
     # 截取新生成的部分（去掉输入的 prompt）
     generated = output_ids[0][input_length:]
-    return tokenizer.decode(generated, skip_special_tokens=True).strip()
+    result = tokenizer.decode(generated, skip_special_tokens=True).strip()
+    # 去掉 Qwen3 内部思考过程，只保留最终回答
+    result = re.sub(r'<think>.*?</think>\s*', '', result, flags=re.DOTALL)
+    # 如果标签没有闭合（截断时），从 <think> 开始全部去掉
+    result = re.sub(r'<think>.*', '', result, flags=re.DOTALL)
+    return result
 
 
 # ================================================================
@@ -234,8 +250,10 @@ def chat_generate(tokenizer, model, messages: list[dict[str, str]], max_new_toke
 @app.post("/embed", response_model=EmbedResponse)
 def embed(request: EmbedRequest) -> EmbedResponse:
     """文本向量化 —— 将一批文本转为稠密向量，用于语义检索"""
+    print(f"[API] /embed 收到 {len(request.texts)} 条文本，正在用 bge-base-zh-v1.5 推理...")
     tokenizer, model = embedding_bundle()
     embeddings = encode_with_bert(tokenizer, model, request.texts)
+    print(f"[API] /embed 完成，输出 {len(embeddings)} 个向量")
     return EmbedResponse(embeddings=embeddings.numpy().astype(float).tolist())
 
 
@@ -244,6 +262,7 @@ def rerank(request: RerankRequest) -> RerankResponse:
     """重排序 —— 对候选文档按与查询的相关性重新打分"""
     if not request.documents:
         return RerankResponse(scores=[])
+    print(f"[API] /rerank 收到查询，候选文档 {len(request.documents)} 篇，正在用 bge-reranker-large 推理...")
     tokenizer, model = reranker_bundle()
     pairs = [(request.query, document) for document in request.documents]
     encoded = tokenizer(pairs, padding=True, truncation=True, max_length=512, return_tensors="pt").to(DEVICE)
@@ -252,12 +271,14 @@ def rerank(request: RerankRequest) -> RerankResponse:
         scores = torch.sigmoid(logits).detach().cpu().numpy().astype(float).tolist()
     if isinstance(scores, float):
         scores = [scores]
+    print(f"[API] /rerank 完成，返回 {len(scores)} 个分数")
     return RerankResponse(scores=scores)
 
 
 @app.post("/rewrite", response_model=RewriteResponse)
 def rewrite(request: RewriteRequest) -> RewriteResponse:
     """问题改写 —— 将口语化、不规范的问题转成适合知识库检索的标准问法"""
+    print(f"[API] /rewrite 收到问题：「{request.query[:60]}...」，正在用 Qwen3-0.6B 改写...")
     tokenizer, model = rewrite_bundle()
     messages = [
         {"role": "system", "content": "你是高校教务智能问答的问题改写助手。只输出一个规范、清晰、适合知识库检索的问题，不要解释。"},
@@ -265,6 +286,7 @@ def rewrite(request: RewriteRequest) -> RewriteResponse:
     ]
     text = chat_generate(tokenizer, model, messages, max_new_tokens=96)
     text = text.splitlines()[0].strip(" ：:")
+    print(f"[API] /rewrite 完成 → 「{text or request.query}」")
     return RewriteResponse(rewrite=text or request.query)
 
 
@@ -273,6 +295,7 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     """模块分类 —— 判断用户问题属于哪个教务子模块（如考务通知、教学运行等）"""
     # 默认模块类型及对应的描述文字
     candidates = request.candidates or ["考务通知", "教学运行", "学业帮扶", "心理辅导"]
+    print(f"[API] /classify 收到问题，候选模块 {candidates}，正在用 chinese-macbert-base 分类...")
     descriptions = {
         "考务通知": "考试安排、考场、准考证、成绩、补考、缓考、四六级等考务问题",
         "教学运行": "选课、课表、调课、重修、课程、教室、学分、培养方案等教学运行问题",
@@ -292,12 +315,14 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
         if score > best_score:
             best_score = score
             best_module = candidate
+    print(f"[API] /classify 完成 → {best_module} (score: {best_score:.4f})")
     return ClassifyResponse(moduleType=best_module, scores=scores)
 
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(request: GenerateRequest) -> GenerateResponse:
     """答案生成 —— 基于原始问题、改写问题和知识库参考，生成最终回答"""
+    print(f"[API] /generate 收到请求「{request.originalQuestion[:50]}...」，参考 {len(request.references)} 条，正在用 Qwen3.5-4B 生成...")
     tokenizer, model = generator_bundle()
     # 构建知识库参考上下文（最多取前 3 条）
     context_lines = []
@@ -325,4 +350,5 @@ def generate(request: GenerateRequest) -> GenerateResponse:
         },
     ]
     answer = chat_generate(tokenizer, model, messages, max_new_tokens=384)
+    print(f"[API] /generate 完成，输出 {len(answer)} 字")
     return GenerateResponse(answer=answer)

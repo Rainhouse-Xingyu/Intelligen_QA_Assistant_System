@@ -67,8 +67,6 @@ public class AiChatServiceImpl implements AiChatService {
                 answerSource = "RAG";
             } else {
                 unrecognizedQueryService.recordUnrecognized(userId, query, moduleType, searchResponse.topScore());
-                answer = cozeService.chat(String.valueOf(userId), query);
-                answerSource = "Coze";
             }
         }
 
