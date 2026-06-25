@@ -6,7 +6,7 @@
 
 - `Qwen3-0.6B`: 问题规范化改写
 - `Qwen3.5-4B`: 基于 Top-3 知识片段生成最终答案
-- `bge-small-zh-v1.5`: 向量化
+- `bge-base-zh-v1.5`: 向量化
 - `bge-reranker-large`: 重排序
 - `chinese-macbert-base`: 意图分类语义匹配
 
@@ -21,6 +21,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ./start.sh
 ```
+
+`start.sh` 会优先使用当前目录的 `.venv/bin/python`；如需指定其他解释器，可通过 `PYTHON_BIN=/path/to/python ./start.sh` 覆盖。
 
 后端默认访问：
 

@@ -3,6 +3,7 @@ package me.rainhouse.qasystem.service.localmodel;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.rainhouse.qasystem.config.LocalModelServiceProperties;
+import me.rainhouse.qasystem.common.utils.AiTextSanitizer;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -56,9 +57,10 @@ public class LocalModelClientImpl implements LocalModelClient {
 
     @Override
     public String rewrite(String query) {
-        return post("/rewrite", Map.of("query", query == null ? "" : query))
+        String rewrite = post("/rewrite", Map.of("query", query == null ? "" : query))
                 .path("rewrite")
                 .asText("");
+        return AiTextSanitizer.stripThinking(rewrite);
     }
 
     @Override
@@ -88,7 +90,7 @@ public class LocalModelClientImpl implements LocalModelClient {
                 "rewriteQuestion", rewriteQuestion == null ? "" : rewriteQuestion,
                 "references", refPayload
         ));
-        return node.path("answer").asText("");
+        return AiTextSanitizer.stripThinking(node.path("answer").asText(""));
     }
 
     @Override

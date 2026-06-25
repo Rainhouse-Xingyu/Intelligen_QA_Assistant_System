@@ -214,10 +214,33 @@ def encode_with_bert(tokenizer, model, texts: list[str], max_length: int = 512) 
     return embeddings.cpu()
 
 
+def strip_thinking(text: str) -> str:
+    """去掉 Qwen3 可能输出的内部思考过程，只保留正式回答。"""
+    result = (text or "").strip()
+    result = re.sub(r"<think\b[^>]*>.*?</think>\s*", "", result, flags=re.DOTALL | re.IGNORECASE)
+    result = re.sub(r"<think\b[^>]*>.*", "", result, flags=re.DOTALL | re.IGNORECASE)
+
+    # Qwen3 thinking 模式下，chat template 可能把 <think> 放在 prompt 里。
+    # 此时代码只解码新生成 token，会看到“思考正文 + </think> + 正式回答”。
+    close_index = result.lower().rfind("</think>")
+    if close_index >= 0:
+        result = result[close_index + len("</think>"):]
+    result = re.sub(r"</think>\s*", "", result, flags=re.IGNORECASE)
+    return result.strip()
+
+
 def chat_generate(tokenizer, model, messages: list[dict[str, str]], max_new_tokens: int) -> str:
     """用 Chat 模型根据多轮消息生成文本，返回解码后的字符串"""
     if hasattr(tokenizer, "apply_chat_template"):
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        try:
+            text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
         # 降级：手工拼接消息格式
         text = "\n".join(f"{m['role']}: {m['content']}" for m in messages) + "\nassistant:"
@@ -236,11 +259,10 @@ def chat_generate(tokenizer, model, messages: list[dict[str, str]], max_new_toke
     # 截取新生成的部分（去掉输入的 prompt）
     generated = output_ids[0][input_length:]
     result = tokenizer.decode(generated, skip_special_tokens=True).strip()
-    # 去掉 Qwen3 内部思考过程，只保留最终回答
-    result = re.sub(r'<think>.*?</think>\s*', '', result, flags=re.DOTALL)
-    # 如果标签没有闭合（截断时），从 <think> 开始全部去掉
-    result = re.sub(r'<think>.*', '', result, flags=re.DOTALL)
-    return result
+    cleaned = strip_thinking(result)
+    if cleaned != result:
+        print(f"[chat_generate] 已过滤 thinking 内容：{len(result)} → {len(cleaned)} 字")
+    return cleaned
 
 
 # ================================================================
