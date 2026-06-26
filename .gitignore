@@ -1,11 +1,26 @@
-.DS_Store
-
 node_modules/
 dist/
 target/
 .idea/
 .vscode/
+.DS_Store
 
 # Local secrets, never commit to public repositories
 backend/config/application-secrets.properties
-.DS_Store
+
+# Local docker data
+milvus-data/
+
+# Local app uploads
+uploads/
+
+# Python local runtime and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
