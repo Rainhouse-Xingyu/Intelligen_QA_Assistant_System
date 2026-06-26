@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiGet, apiJson } from '../js/adminApi'
+import MascotLottie from '../components/MascotLottie.vue'
 
 const emit = defineEmits(['login-success'])
 
@@ -10,11 +11,56 @@ const passwordVisible = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
 const rememberMe = ref(false)
+const mascotMode = ref('idle')
+const passwordInput = ref(null)
 
 const passwordType = computed(() => (passwordVisible.value ? 'text' : 'password'))
+const activeMascotMode = computed(() => (loading.value ? 'happy' : mascotMode.value))
 
 function togglePassword() {
   passwordVisible.value = !passwordVisible.value
+  mascotMode.value = passwordVisible.value ? 'peek' : 'cover'
+
+  nextTick(() => {
+    passwordInput.value?.focus()
+  })
+}
+
+function handlePasswordFocus() {
+  mascotMode.value = passwordVisible.value ? 'peek' : 'cover'
+}
+
+function handlePasswordBlur(event) {
+  if (event.relatedTarget?.classList?.contains('eye-button')) {
+    return
+  }
+
+  if (mascotMode.value === 'peek') {
+    mascotMode.value = 'return'
+    return
+  }
+
+  if (mascotMode.value === 'cover') {
+    mascotMode.value = 'uncover'
+  }
+}
+
+function handleUsernameFocus() {
+  if (mascotMode.value === 'peek') {
+    mascotMode.value = 'return'
+    return
+  }
+
+  if (mascotMode.value === 'cover') {
+    mascotMode.value = 'uncover'
+    return
+  }
+
+  if (mascotMode.value === 'return' || mascotMode.value === 'uncover') {
+    return
+  }
+
+  mascotMode.value = 'idle'
 }
 
 function getRoleName(role) {
@@ -95,7 +141,9 @@ onUnmounted(() => {
 <template>
   <main class="login-stage">
     <div class="login-container">
-      <div class="mascot-section"></div>
+      <div class="mascot-section">
+        <MascotLottie :mode="activeMascotMode" />
+      </div>
 
       <div class="form-section">
         <div class="form-header">
@@ -114,6 +162,7 @@ onUnmounted(() => {
                 placeholder="请输入用户名"
                 autocomplete="username"
                 :disabled="loading"
+                @focus="handleUsernameFocus"
               />
             </div>
           </div>
@@ -124,16 +173,20 @@ onUnmounted(() => {
               <span class="input-icon lock-icon"></span>
               <input
                 id="password"
+                ref="passwordInput"
                 v-model="password"
                 :type="passwordType"
                 placeholder="请输入密码"
                 autocomplete="current-password"
                 :disabled="loading"
+                @focus="handlePasswordFocus"
+                @blur="handlePasswordBlur"
               />
               <button
                 class="eye-button"
                 type="button"
                 :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
+                @mousedown.prevent
                 @click="togglePassword"
               >
                 <span class="eye-icon" :class="{ crossed: !passwordVisible }"></span>
@@ -199,10 +252,31 @@ onUnmounted(() => {
 }
 
 .mascot-section {
+  position: relative;
+  display: grid;
   min-width: 280px;
   min-height: 400px;
-  background: linear-gradient(180deg, rgba(237, 247, 255, 0.6), rgba(255, 248, 231, 0.4));
-  border-right: 1px solid rgba(47, 140, 255, 0.12);
+  place-items: center;
+  overflow: hidden;
+  padding: 36px 24px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(47, 140, 255, 0.14), transparent 34%),
+    radial-gradient(circle at 78% 76%, rgba(255, 183, 47, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(237, 247, 255, 0.34), rgba(255, 248, 231, 0.2));
+}
+
+.mascot-section::before {
+  position: absolute;
+  inset: 26px 22px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.16) 58%, transparent 76%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(234, 245, 255, 0.18));
+  content: '';
+}
+
+.mascot-section :deep(.mascot-lottie-shell) {
+  z-index: 1;
+  filter: drop-shadow(0 18px 26px rgba(22, 103, 223, 0.16));
 }
 
 .form-section {
@@ -578,7 +652,17 @@ onUnmounted(() => {
   }
 
   .mascot-section {
-    display: none;
+    min-width: 0;
+    min-height: 230px;
+    padding: 18px;
+  }
+
+  .mascot-section::before {
+    inset: 14px;
+  }
+
+  .mascot-section :deep(.mascot-lottie-shell) {
+    width: min(230px, 72vw);
   }
 
   .form-section {

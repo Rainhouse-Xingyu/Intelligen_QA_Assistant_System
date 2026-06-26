@@ -29,12 +29,30 @@ except Exception:  # pragma: no cover - depends on transformers version
 
 
 # ----- 环境配置 -----
-MODEL_BASE = os.getenv("AIGE_MODEL_BASE", "/opt/aige-models")
-DEVICE = os.getenv("AIGE_MODEL_DEVICE") or (
-    "cuda" if torch.cuda.is_available() else
-    "mps" if torch.backends.mps.is_available() else
-    "cpu"
-)
+def default_model_base() -> str:
+    windows_model_base = r"D:\Application\models"
+    if os.name == "nt" and os.path.isdir(windows_model_base):
+        return windows_model_base
+    return "/opt/aige-models"
+
+
+MODEL_BASE = os.getenv("AIGE_MODEL_BASE", default_model_base())
+
+
+def resolve_device() -> str:
+    configured_device = os.getenv("AIGE_MODEL_DEVICE")
+    if configured_device:
+        return configured_device
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+DEVICE = resolve_device()
+CAUSAL_LM_DTYPE = torch.float16 if DEVICE.startswith("cuda") or DEVICE == "mps" else torch.float32
 
 
 def model_path(name: str) -> str:
@@ -152,8 +170,7 @@ def rewrite_bundle():
     path = model_path("Qwen3-0.6B")
     print(f"[加载模型] Qwen3-0.6B (rewrite) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
-    dtype = torch.float16 if DEVICE in ("cuda", "mps") else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=dtype).to(DEVICE)
+    model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=CAUSAL_LM_DTYPE).to(DEVICE)
     model.eval()
     print(f"[模型就绪] Qwen3-0.6B (rewrite) on {DEVICE}")
     return tokenizer, model
@@ -164,24 +181,23 @@ def generator_bundle():
     path = model_path("Qwen3.5-4B")
     print(f"[加载模型] Qwen3.5-4B (generate) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
-    dtype = torch.float16 if DEVICE in ("cuda", "mps") else torch.float32
     if AutoModelForImageTextToText is not None:
         try:
             model = AutoModelForImageTextToText.from_pretrained(
                 path,
                 local_files_only=True,
                 trust_remote_code=True,
-                torch_dtype=dtype,
+                torch_dtype=CAUSAL_LM_DTYPE,
             ).to(DEVICE)
         except Exception:
             model = AutoModelForCausalLM.from_pretrained(
                 path,
                 local_files_only=True,
                 trust_remote_code=True,
-                torch_dtype=dtype,
+                torch_dtype=CAUSAL_LM_DTYPE,
             ).to(DEVICE)
     else:
-        model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=dtype).to(DEVICE)
+        model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=CAUSAL_LM_DTYPE).to(DEVICE)
     model.eval()
     print(f"[模型就绪] Qwen3.5-4B (generate) on {DEVICE}")
     return tokenizer, model
