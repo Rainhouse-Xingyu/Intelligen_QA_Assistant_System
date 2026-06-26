@@ -30,7 +30,11 @@ except Exception:  # pragma: no cover - depends on transformers version
 
 # ----- 环境配置 -----
 MODEL_BASE = os.getenv("AIGE_MODEL_BASE", "/opt/aige-models")
-DEVICE = os.getenv("AIGE_MODEL_DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = os.getenv("AIGE_MODEL_DEVICE") or (
+    "cuda" if torch.cuda.is_available() else
+    "mps" if torch.backends.mps.is_available() else
+    "cpu"
+)
 
 
 def model_path(name: str) -> str:
@@ -148,7 +152,7 @@ def rewrite_bundle():
     path = model_path("Qwen3-0.6B")
     print(f"[加载模型] Qwen3-0.6B (rewrite) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
-    dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+    dtype = torch.float16 if DEVICE in ("cuda", "mps") else torch.float32
     model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=dtype).to(DEVICE)
     model.eval()
     print(f"[模型就绪] Qwen3-0.6B (rewrite) on {DEVICE}")
@@ -160,7 +164,7 @@ def generator_bundle():
     path = model_path("Qwen3.5-4B")
     print(f"[加载模型] Qwen3.5-4B (generate) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
-    dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+    dtype = torch.float16 if DEVICE in ("cuda", "mps") else torch.float32
     if AutoModelForImageTextToText is not None:
         try:
             model = AutoModelForImageTextToText.from_pretrained(
