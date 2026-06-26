@@ -39,6 +39,7 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     private final Gson gson = new Gson();
     private final MilvusClientV2 client;
+    private final boolean available;
     private final KbQaEntryService kbQaEntryService;
     private final String collectionName;
     private final String idField;
@@ -65,15 +66,21 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
         this.questionField = questionField;
         this.knowledgeIdField = knowledgeIdField;
 
+        if (!StringUtils.hasText(apiKey)) {
+            this.client = null;
+            this.available = false;
+            log.warn("Milvus API Key 未配置，向量库功能将暂时禁用；配置 MILVUS_API_KEY 后可恢复。");
+            return;
+        }
+
         ConnectConfig.ConnectConfigBuilder builder = ConnectConfig.builder()
                 .uri(endpoint);
-        if (StringUtils.hasText(apiKey)) {
-            builder.token(apiKey);
-        }
+        builder.token(apiKey);
         if (StringUtils.hasText(databaseName)) {
             builder.dbName(databaseName);
         }
         this.client = new MilvusClientV2(builder.build());
+        this.available = true;
         log.info("远端 Milvus 客户端初始化完成，collection: {}, database: {}",
                 collectionName,
                 StringUtils.hasText(databaseName) ? databaseName : "default");
@@ -81,6 +88,9 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     @Override
     public void upsert(VectorDocument document) {
+        if (!available) {
+            return;
+        }
         if (document == null || document.knowledgeId() == null) {
             return;
         }
@@ -92,6 +102,9 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     @Override
     public void upsertBatch(Collection<VectorDocument> documents) {
+        if (!available) {
+            return;
+        }
         if (documents == null || documents.isEmpty()) {
             return;
         }
@@ -111,6 +124,9 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     @Override
     public void remove(Long knowledgeId) {
+        if (!available) {
+            return;
+        }
         if (knowledgeId == null) {
             return;
         }
@@ -122,6 +138,9 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     @Override
     public void clear() {
+        if (!available) {
+            return;
+        }
         client.delete(DeleteReq.builder()
                 .collectionName(collectionName)
                 .filter(idField + " >= 0")
@@ -130,6 +149,9 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     @Override
     public int size() {
+        if (!available) {
+            return 0;
+        }
         GetCollectionStatsResp stats = client.getCollectionStats(GetCollectionStatsReq.builder()
                 .collectionName(collectionName)
                 .build());
@@ -139,6 +161,9 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     @Override
     public List<VectorDocument> search(float[] queryVector, String moduleType, int topK) {
+        if (!available) {
+            return Collections.emptyList();
+        }
         SearchReq.SearchReqBuilder builder = SearchReq.builder()
                 .collectionName(collectionName)
                 .annsField(embeddingField)
