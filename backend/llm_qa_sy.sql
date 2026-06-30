@@ -251,32 +251,66 @@ CREATE TABLE psychological_chat_record (
 -- ----------------------------
 -- 10. 问卷调查模块
 -- ----------------------------
+DROP TABLE IF EXISTS `survey_answer`;
+DROP TABLE IF EXISTS `survey_submission`;
 DROP TABLE IF EXISTS `survey_question`;
+DROP TABLE IF EXISTS `survey`;
+DROP TABLE IF EXISTS `student_survey_record`;
+
+CREATE TABLE `survey` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `title` varchar(200) NOT NULL COMMENT '问卷标题',
+  `description` text COMMENT '问卷说明',
+  `status` tinyint NOT NULL DEFAULT 0 COMMENT '状态：0草稿 1已发布 2已关闭',
+  `scope_type` varchar(20) NOT NULL DEFAULT 'ALL' COMMENT '发布范围类型：ALL全校，后续可扩展学院/班级',
+  `created_by` bigint(20) DEFAULT NULL COMMENT '创建管理员ID',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `published_at` datetime DEFAULT NULL COMMENT '发布时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_scope_type` (`scope_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷主表';
+
 CREATE TABLE `survey_question` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `question_no` varchar(20) NOT NULL COMMENT '问题序号',
-  `question_desc` text NOT NULL COMMENT '问题描述',
+  `survey_id` bigint(20) NOT NULL COMMENT '问卷ID',
+  `question_no` int NOT NULL COMMENT '题目序号',
+  `question_text` text NOT NULL COMMENT '题干',
+  `question_type` tinyint NOT NULL DEFAULT 1 COMMENT '题型：1量表题 2文本题',
+  `required` tinyint NOT NULL DEFAULT 1 COMMENT '是否必填：0否 1是',
+  `sort_order` int NOT NULL DEFAULT 0 COMMENT '排序',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_question_no` (`question_no`)
+  UNIQUE KEY `uk_survey_question_no` (`survey_id`,`question_no`),
+  KEY `idx_survey_sort` (`survey_id`,`sort_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷调查问题表';
 
-DROP TABLE IF EXISTS `student_survey_record`;
-CREATE TABLE `student_survey_record` (
+CREATE TABLE `survey_submission` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `student_name` varchar(50) NOT NULL COMMENT '学生姓名',
-  `class_name` varchar(100) DEFAULT NULL COMMENT '班级',
-  `student_no` varchar(50) DEFAULT NULL COMMENT '学号(预留)',
-  `question_no` varchar(20) NOT NULL COMMENT '问题序号',
-  `answer` text COMMENT '答案',
-  `answer_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '作答时间',
+  `survey_id` bigint(20) NOT NULL COMMENT '问卷ID',
+  `user_id` bigint(20) NOT NULL COMMENT '学生用户ID',
+  `submit_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '提交时间',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  KEY `idx_student_name` (`student_name`),
-  KEY `idx_class_name` (`class_name`),
-  KEY `idx_student_no` (`student_no`),
-  KEY `idx_question_no` (`question_no`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生学业问卷作答记录表';
+  UNIQUE KEY `uk_survey_user` (`survey_id`,`user_id`),
+  KEY `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷提交记录表';
+
+CREATE TABLE `survey_answer` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `submission_id` bigint(20) NOT NULL COMMENT '提交记录ID',
+  `survey_id` bigint(20) NOT NULL COMMENT '问卷ID',
+  `question_id` bigint(20) NOT NULL COMMENT '题目ID',
+  `user_id` bigint(20) NOT NULL COMMENT '学生用户ID',
+  `numeric_answer` tinyint DEFAULT NULL COMMENT '量表题答案：1完全符合 2比较符合 3一般符合 4比较不符合 5不符合',
+  `text_answer` text COMMENT '文本题答案',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_submission_question` (`submission_id`,`question_id`),
+  KEY `idx_survey_user` (`survey_id`,`user_id`),
+  KEY `idx_question_id` (`question_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷答案表';
 
 DROP TABLE IF EXISTS `student_warning_level`;
 CREATE TABLE `student_warning_level` (
