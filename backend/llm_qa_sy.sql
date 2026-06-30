@@ -110,7 +110,9 @@ CREATE TABLE `stat_hot_question` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `question_text` varchar(500) NOT NULL COMMENT '标准问题',
   `answer_text` text COMMENT '标准答案',
-  `module_type` varchar(50) DEFAULT NULL COMMENT '模块类型(考务通知/教学运行/学业帮扶)',
+  `module_type` varchar(50) DEFAULT NULL COMMENT '一级分类(考务通知/教学运行/学业帮扶)',
+  `category_l2` varchar(50) DEFAULT NULL COMMENT '二级分类',
+  `category_l3` varchar(50) DEFAULT NULL COMMENT '三级分类',
   `frequency` int(11) DEFAULT '1' COMMENT '提问次数',
   `last_hit_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '最后命中时间',
   `stat_date` date NOT NULL COMMENT '统计日期',
@@ -245,3 +247,48 @@ CREATE TABLE psychological_chat_record (
   COMMENT 'AI回复',
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ----------------------------
+-- 10. 问卷调查模块
+-- ----------------------------
+DROP TABLE IF EXISTS `survey_question`;
+CREATE TABLE `survey_question` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `question_no` varchar(20) NOT NULL COMMENT '问题序号',
+  `question_desc` text NOT NULL COMMENT '问题描述',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_question_no` (`question_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷调查问题表';
+
+DROP TABLE IF EXISTS `student_survey_record`;
+CREATE TABLE `student_survey_record` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `student_name` varchar(50) NOT NULL COMMENT '学生姓名',
+  `class_name` varchar(100) DEFAULT NULL COMMENT '班级',
+  `student_no` varchar(50) DEFAULT NULL COMMENT '学号(预留)',
+  `question_no` varchar(20) NOT NULL COMMENT '问题序号',
+  `answer` text COMMENT '答案',
+  `answer_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '作答时间',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_student_name` (`student_name`),
+  KEY `idx_class_name` (`class_name`),
+  KEY `idx_student_no` (`student_no`),
+  KEY `idx_question_no` (`question_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生学业问卷作答记录表';
+
+DROP TABLE IF EXISTS `student_warning_level`;
+CREATE TABLE `student_warning_level` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `student_name` varchar(50) NOT NULL COMMENT '学生姓名',
+  `class_name` varchar(100) DEFAULT NULL COMMENT '班级',
+  `student_no` varchar(50) DEFAULT NULL COMMENT '学号(预留)',
+  `warning_level` varchar(20) NOT NULL COMMENT '预警等级',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_student_name` (`student_name`),
+  KEY `idx_class_name` (`class_name`),
+  KEY `idx_student_no` (`student_no`),
+  KEY `idx_warning_level` (`warning_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生预警等级表';
