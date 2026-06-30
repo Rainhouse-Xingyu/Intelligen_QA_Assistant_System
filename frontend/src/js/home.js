@@ -3,7 +3,7 @@ import { apiGet, apiForm } from './adminApi'
 
 export default {
   name: 'Home',
-  emits: ['start-chat', 'navigate-login'],
+  emits: ['start-chat', 'navigate-login', 'navigate-survey'],
   setup(props, { emit }) {
     const question = ref('')
     const selectedCategory = ref(null)
@@ -102,6 +102,14 @@ export default {
       }
     }
 
+    const handleSurveyClick = () => {
+      if (!isLoggedIn.value) {
+        emit('navigate-login')
+        return
+      }
+      emit('navigate-survey')
+    }
+
     const handleSendFromHome = () => {
       if (!question.value.trim()) return
       if (!selectedCategory.value) {
@@ -146,6 +154,7 @@ export default {
       conversations,
       handleSendFromHome,
       handleLoginClick,
+      handleSurveyClick,
       newConversation,
       selectConversation,
       deleteConversation

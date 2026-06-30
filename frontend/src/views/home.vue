@@ -31,8 +31,11 @@
            </div>
          </div>
       </div>
-      <div class="nav-item" @click="handleLoginClick">
-        {{ isLoggedIn ? (userInfo.realName || userInfo.username) + ' | 退出' : '登录' }}
+      <div class="nav-actions">
+        <div class="nav-item" @click="handleSurveyClick">问卷调查</div>
+        <div class="nav-item" @click="handleLoginClick">
+          {{ isLoggedIn ? (userInfo.realName || userInfo.username) + ' | 退出' : '登录' }}
+        </div>
       </div>
     </nav>
 
@@ -56,6 +59,15 @@
             <path d="M5 12h14"></path>
           </svg>
           新对话
+        </button>
+        <button class="btn ghost" @click="handleSurveyClick">
+          <svg viewBox="0 0 24 24" class="icon">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <path d="M14 2v6h6"></path>
+            <path d="M9 13h6"></path>
+            <path d="M9 17h6"></path>
+          </svg>
+          问卷调查
         </button>
         <nav class="admin-nav">
           <a
