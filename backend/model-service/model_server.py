@@ -175,11 +175,11 @@ def rewrite_bundle():
     print(f"[模型就绪] Qwen3-0.6B (rewrite) on {DEVICE}")
     return tokenizer, model
 
-# 答案生成模型：Qwen3.5-4B，基于知识库参考生成最终回答
+# 答案生成模型：Qwen2.5-1.5B-Instruct，基于知识库参考生成最终回答
 @lru_cache(maxsize=1)
 def generator_bundle():
-    path = model_path("Qwen3.5-4B")
-    print(f"[加载模型] Qwen3.5-4B (generate) from {path}")
+    path = model_path("Qwen2.5-1.5B-Instruct")
+    print(f"[加载模型] Qwen2.5-1.5B-Instruct (generate) from {path}")
     tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=True)
     if AutoModelForImageTextToText is not None:
         try:
@@ -199,7 +199,7 @@ def generator_bundle():
     else:
         model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, trust_remote_code=True, torch_dtype=CAUSAL_LM_DTYPE).to(DEVICE)
     model.eval()
-    print(f"[模型就绪] Qwen3.5-4B (generate) on {DEVICE}")
+    print(f"[模型就绪] Qwen2.5-1.5B-Instruct (generate) on {DEVICE}")
     return tokenizer, model
 
 
@@ -364,7 +364,7 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
 @app.post("/generate", response_model=GenerateResponse)
 def generate(request: GenerateRequest) -> GenerateResponse:
     """答案生成 —— 基于原始问题、改写问题和知识库参考，生成最终回答"""
-    print(f"[API] /generate 收到请求「{request.originalQuestion[:50]}...」，参考 {len(request.references)} 条，正在用 Qwen3.5-4B 生成...")
+    print(f"[API] /generate 收到请求「{request.originalQuestion[:50]}...」，参考 {len(request.references)} 条，正在用 Qwen2.5-1.5B-Instruct 生成...")
     tokenizer, model = generator_bundle()
     # 构建知识库参考上下文（最多取前 3 条）
     context_lines = []
