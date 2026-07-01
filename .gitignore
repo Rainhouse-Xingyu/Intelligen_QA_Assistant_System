@@ -9,6 +9,9 @@ __pycache__/
 .DS_Store
 
 # Local secrets, never commit to public repositories
+.env
+.env.*
+!.env.example
 backend/config/application-secrets.properties
 
 # Local docker data

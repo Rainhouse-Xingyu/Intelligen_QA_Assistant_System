@@ -1,0 +1,8 @@
+target/
+config/application-secrets.properties
+model-service/.venv/
+model-service/__pycache__/
+model-service/*.pyc
+uploads/
+*.log
+.DS_Store

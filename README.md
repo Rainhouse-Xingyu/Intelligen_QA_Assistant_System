@@ -33,6 +33,17 @@
 
 ## 🚀 快速开始
 
+### Docker 一键部署
+
+项目已提供完整 Docker Compose 编排，可启动 MySQL、Redis、Milvus、本地模型服务、后端和前端：
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+默认前端访问地址：`http://localhost`。模型目录、端口和第三方密钥配置请参考 `docs/docker-deploy.md`。
+
 ### 1. 数据库准备
 在 MySQL 中新建数据库，并执行 `backend/llm_qa_sy.sql` 脚本以创建所需的表结构及初始数据。
 
