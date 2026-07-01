@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import json
 from functools import lru_cache
 from typing import Any
 
@@ -126,6 +127,24 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     """答案生成响应"""
     answer: str
+
+
+class ChunkRequest(BaseModel):
+    """文档切片请求：将原始文档抽取为 FAQ 知识片段"""
+    text: str
+    title: str | None = None
+    maxItems: int = 24
+
+
+class ChunkItem(BaseModel):
+    """单个 FAQ 知识片段"""
+    question: str
+    answer: str
+
+
+class ChunkResponse(BaseModel):
+    """文档切片响应"""
+    items: list[ChunkItem]
 
 
 @app.get("/health")
@@ -285,6 +304,33 @@ def chat_generate(tokenizer, model, messages: list[dict[str, str]], max_new_toke
     return cleaned
 
 
+def extract_json_array(text: str) -> list[dict[str, Any]]:
+    """从模型输出中提取 JSON 数组，避免解释性文本影响调用方。"""
+    cleaned = strip_thinking(text or "").strip()
+    start = cleaned.find("[")
+    end = cleaned.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    try:
+        data = json.loads(cleaned[start:end + 1])
+    except Exception as exc:
+        print(f"[chunk] JSON 解析失败: {exc}; output={cleaned[:300]}")
+        return []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def release_chunk_model(force: bool = False) -> None:
+    """Release the FAQ chunking model only when explicitly requested or during OOM recovery."""
+    unload_enabled = os.getenv("AIGE_UNLOAD_CHUNK_MODEL", "false").strip().lower() in {"1", "true", "yes", "y"}
+    if not force and not unload_enabled:
+        return
+    rewrite_bundle.cache_clear()
+    if DEVICE.startswith("cuda"):
+        torch.cuda.empty_cache()
+
+
 # ================================================================
 #  API 端点
 # ================================================================
@@ -293,7 +339,14 @@ def chat_generate(tokenizer, model, messages: list[dict[str, str]], max_new_toke
 def embed(request: EmbedRequest) -> EmbedResponse:
     """文本向量化 —— 将一批文本转为稠密向量，用于语义检索"""
     print(f"[API] /embed 收到 {len(request.texts)} 条文本，正在用 bge-base-zh-v1.5 推理...")
-    tokenizer, model = embedding_bundle()
+    try:
+        tokenizer, model = embedding_bundle()
+    except torch.OutOfMemoryError:
+        release_chunk_model(force=True)
+        embedding_bundle.cache_clear()
+        if DEVICE.startswith("cuda"):
+            torch.cuda.empty_cache()
+        tokenizer, model = embedding_bundle()
     embeddings = encode_with_bert(tokenizer, model, request.texts)
     print(f"[API] /embed 完成，输出 {len(embeddings)} 个向量")
     return EmbedResponse(embeddings=embeddings.numpy().astype(float).tolist())
@@ -323,11 +376,32 @@ def rewrite(request: RewriteRequest) -> RewriteResponse:
     print(f"[API] /rewrite 收到问题：「{request.query[:60]}...」，正在用 Qwen3-0.6B 改写...")
     tokenizer, model = rewrite_bundle()
     messages = [
-        {"role": "system", "content": "你是高校教务智能问答的问题改写助手。只输出一个规范、清晰、适合知识库检索的问题，不要解释。"},
-        {"role": "user", "content": f"原始问题：{request.query}"},
+        {
+            "role": "system",
+            "content": (
+                "你是高校教务智能问答的问题改写助手。只输出一个适合知识库检索的标准问题，不要解释。"
+                "必须补全用户省略的检索意图，例如时间、条件、流程、材料、入口、注意事项。"
+                "禁止只是照抄原句、只加问号、只改标点。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "请把原始问题改写成一个完整、明确、可检索的政策问题。\n"
+                "示例：\n"
+                "原始问题：补考\n"
+                "改写：补考的报名条件、时间安排和考试流程是什么？\n"
+                "原始问题：选课怎么弄\n"
+                "改写：选课的开放时间、操作流程和退补选规则是什么？\n"
+                f"原始问题：{request.query}\n"
+                "改写："
+            ),
+        },
     ]
     text = chat_generate(tokenizer, model, messages, max_new_tokens=96)
     text = text.splitlines()[0].strip(" ：:")
+    if text and not text.endswith(("？", "?")):
+        text = f"{text}？"
     print(f"[API] /rewrite 完成 → 「{text or request.query}」")
     return RewriteResponse(rewrite=text or request.query)
 
@@ -359,6 +433,75 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
             best_module = candidate
     print(f"[API] /classify 完成 → {best_module} (score: {best_score:.4f})")
     return ClassifyResponse(moduleType=best_module, scores=scores)
+
+
+@app.post("/chunk", response_model=ChunkResponse)
+def chunk_document(request: ChunkRequest) -> ChunkResponse:
+    """文档智能切片 —— 将政策/指南文档抽取成可检索 FAQ 片段"""
+    text = (request.text or "").strip()
+    if not text:
+        return ChunkResponse(items=[])
+
+    max_items = max(1, min(request.maxItems, 40))
+    # 控制单次上下文，超长文档由 Java 侧分批调用或规则兜底处理。
+    text = text[:12000]
+    print(f"[API] /chunk 收到文档「{request.title or ''}」，长度 {len(text)}，最多 {max_items} 条")
+
+    try:
+        tokenizer, model = rewrite_bundle()
+    except Exception as exc:
+        release_chunk_model(force=True)
+        print(f"[API] /chunk 加载轻量切片模型失败，返回空结果交给 Java 规则兜底: {exc}")
+        return ChunkResponse(items=[])
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是高校教务知识库的文档切片专家。你的任务是把原始文档切成可用于 RAG 检索的 FAQ 知识片段。\n"
+                "必须遵守：\n"
+                "1. 只输出 JSON 数组，不要 Markdown，不要解释，不要代码块。\n"
+                "2. 数组元素格式固定为 {\"question\":\"...\",\"answer\":\"...\"}。\n"
+                "3. 只能使用本次输入片段中的内容配对 question 和 answer，禁止跨标题、跨事项、跨段落借用其他内容。\n"
+                "4. question 的核心名词必须能在 answer 中找到对应依据；如果找不到明确答案，就不要输出该问题。\n"
+                "5. 一个片段只回答一个独立业务问题；不同业务主题、不同办理事项、不同对象条件必须拆开。\n"
+                "6. 同一事项下的条件、材料、步骤、时间、入口、注意事项要保留在同一个 answer 中，不要机械拆成碎句。\n"
+                "7. question 必须是学生/老师会真实检索的完整问句，且要包含具体主题名词，例如“补考报名时间是什么？”；不能写“第一部分”“相关规定”“该内容是什么”。\n"
+                "8. answer 必须忠实摘取原文事实，不得编造；保留时间、地点、对象、条件、材料、流程、联系方式、例外情况。\n"
+                "9. 每个 answer 建议 80-700 字；太短的相邻同主题内容要合并，太长且含多个事项时要拆分。\n"
+                "10. 表格内容按每行或每类事项整理成自然语言 FAQ；标题要与正文合并理解。\n"
+                "11. 去掉页眉页脚、目录、空泛介绍、重复标题和无意义编号。\n"
+                "12. 如果当前片段只是过渡文字、目录或没有可回答的政策事实，输出 []。\n"
+                "反例：不要把“补考报名时间”的问题配到“缓考申请材料”的答案上；不要把上一节标题配到下一节正文上。\n"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"文档标题：{request.title or '未命名文档'}\n"
+                f"最多输出 {max_items} 条高质量 FAQ。\n\n"
+                "请只基于下面这一个片段做精准切片。先确认每个 question 都能被对应 answer 直接回答，再输出 JSON 数组：\n"
+                "[{\"question\":\"...\",\"answer\":\"...\"}]\n\n"
+                "当前片段：\n"
+                f"{text}"
+            ),
+        },
+    ]
+    try:
+        raw = chat_generate(tokenizer, model, messages, max_new_tokens=2048)
+    except Exception as exc:
+        print(f"[API] /chunk 推理失败，返回空结果交给 Java 规则兜底: {exc}")
+        return ChunkResponse(items=[])
+    finally:
+        release_chunk_model()
+    parsed_items = extract_json_array(raw)
+    items: list[ChunkItem] = []
+    for item in parsed_items[:max_items]:
+        question = str(item.get("question", "")).strip()
+        answer = str(item.get("answer", "")).strip()
+        if question and answer and len(question) <= 500 and len(answer) >= 20:
+            items.append(ChunkItem(question=question, answer=answer))
+    print(f"[API] /chunk 完成，输出 {len(items)} 条")
+    return ChunkResponse(items=items)
 
 
 @app.post("/generate", response_model=GenerateResponse)

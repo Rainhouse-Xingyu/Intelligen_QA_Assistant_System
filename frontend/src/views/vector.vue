@@ -26,6 +26,9 @@
               <SearchIcon />
               {{ loading ? '检索中' : '检索' }}
             </button>
+            <button class="btn ghost" :disabled="rebuilding" @click="rebuildIndex">
+              {{ rebuilding ? '重建中' : '重建索引' }}
+            </button>
           </div>
         </div>
 
@@ -77,6 +80,7 @@ const moduleType = ref('')
 const topK = ref(5)
 const response = ref(null)
 const loading = ref(false)
+const rebuilding = ref(false)
 
 const results = computed(() => response.value?.references || response.value?.results || [])
 const hitClass = computed(() => {
@@ -103,6 +107,17 @@ async function search() {
   }
 }
 
+async function rebuildIndex() {
+  if (!confirm('确认重建向量索引？系统会重新生成所有启用词条的向量，词条多时会稍慢。')) return
+  rebuilding.value = true
+  try {
+    const count = await apiJson('/api/vector/rebuild')
+    alert(`向量索引重建完成，共写入 ${count} 条词条`)
+  } finally {
+    rebuilding.value = false
+  }
+}
+
 function formatScore(value) {
   if (value === undefined || value === null || Number.isNaN(Number(value))) return '-'
   return Number(value).toFixed(2)
@@ -112,7 +127,7 @@ function formatScore(value) {
 <style scoped>
 .search-row {
   display: grid;
-  grid-template-columns: 1fr 220px 170px 104px;
+  grid-template-columns: 1fr 220px 170px 104px 132px;
   gap: 14px;
 }
 

@@ -26,18 +26,47 @@
             </button>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card documents-card">
             <h3 class="section-title">
               <FileIcon />
               解析记录
             </h3>
-            <div v-if="documents.length === 0" class="empty">暂无解析记录</div>
-            <div v-for="doc in documents" :key="doc.id" class="doc-item">
-              <div>
-                <strong>{{ doc.fileName }}</strong>
-                <span>{{ formatTime(doc.createdAt) }}</span>
+            <div class="doc-selection-bar">
+              <label class="check-control">
+                <input
+                  type="checkbox"
+                  :checked="allDocumentsSelected"
+                  :disabled="documents.length === 0"
+                  @change="toggleAllDocuments"
+                />
+                <span>全选</span>
+              </label>
+              <span class="selection-count">已选 {{ selectedDocumentIds.length }} 条</span>
+              <button class="btn text danger compact" :disabled="selectedDocumentIds.length === 0 || documentDeleting" @click="deleteSelectedDocuments">
+                <TrashIcon />
+                {{ documentDeleting ? '删除中...' : '删除选中' }}
+              </button>
+            </div>
+            <div class="doc-list">
+              <div v-if="documents.length === 0" class="empty">暂无解析记录</div>
+              <div v-for="doc in documents" :key="doc.id" :class="['doc-item', { selected: isDocumentSelected(doc.id) }]">
+                <label class="doc-check">
+                  <input type="checkbox" :checked="isDocumentSelected(doc.id)" @change="toggleDocumentSelection(doc.id)" />
+                </label>
+                <div>
+                  <strong>{{ doc.fileName }}</strong>
+                  <span>{{ formatTime(doc.createdAt) }}</span>
+                </div>
+                <span :class="['tag', statusClass(doc.processStatus)]">{{ processText(doc.processStatus) }}</span>
+                <button
+                  v-if="doc.processStatus === 3"
+                  class="btn text compact retry-btn"
+                  :disabled="retryingDocumentId === doc.id"
+                  @click="retryDocument(doc)"
+                >
+                  {{ retryingDocumentId === doc.id ? '重试中...' : '重试' }}
+                </button>
               </div>
-              <span :class="['tag', statusClass(doc.processStatus)]">{{ processText(doc.processStatus) }}</span>
             </div>
           </div>
         </div>
@@ -72,8 +101,28 @@
             </select>
           </div>
 
+          <div class="selection-bar">
+            <label class="check-control">
+              <input
+                type="checkbox"
+                :checked="allVisibleSelected"
+                :disabled="entries.length === 0"
+                @change="toggleAllEntries"
+              />
+              <span>全选</span>
+            </label>
+            <span class="selection-count">已选 {{ selectedEntryIds.length }} 条</span>
+            <button class="btn text danger" :disabled="selectedEntryIds.length === 0 || batchDeleting" @click="deleteSelectedEntries">
+              <TrashIcon />
+              {{ batchDeleting ? '删除中...' : '删除选中' }}
+            </button>
+          </div>
+
           <div class="entry-list">
-            <article v-for="entry in entries" :key="entry.id" class="entry-card">
+            <article v-for="entry in entries" :key="entry.id" :class="['entry-card', { selected: isEntrySelected(entry.id) }]">
+              <label class="entry-check">
+                <input type="checkbox" :checked="isEntrySelected(entry.id)" @change="toggleEntrySelection(entry.id)" />
+              </label>
               <div class="entry-body">
                 <h4>问：{{ entry.question }}</h4>
                 <p>答：{{ entry.answer }}</p>
@@ -88,7 +137,7 @@
                   <EditIcon />
                   编辑
                 </button>
-                <button class="btn text danger" @click="disableEntry(entry.id)">
+                <button class="btn text danger" @click="deleteEntry(entry.id)">
                   <TrashIcon />
                   删除
                 </button>
@@ -133,7 +182,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { apiDelete, apiGet, apiJson, apiUpload } from '../js/adminApi'
 import '../css/admin.css'
 import { AdminSidebar, AdminTopbar, EditIcon, FileIcon, PlusIcon, SearchIcon, TrashIcon, UploadIcon } from './shared/adminParts'
@@ -146,8 +195,22 @@ const fileInput = ref(null)
 const uploadModule = ref('考务通知')
 const uploading = ref(false)
 const saving = ref(false)
+const batchDeleting = ref(false)
+const documentDeleting = ref(false)
+const retryingDocumentId = ref(null)
 const modalOpen = ref(false)
 const editingId = ref(null)
+const selectedEntryIds = ref([])
+const selectedDocumentIds = ref([])
+
+const visibleEntryIds = computed(() => entries.value.map((entry) => entry.id))
+const allVisibleSelected = computed(() => {
+  return visibleEntryIds.value.length > 0 && visibleEntryIds.value.every((id) => selectedEntryIds.value.includes(id))
+})
+const visibleDocumentIds = computed(() => documents.value.map((document) => document.id))
+const allDocumentsSelected = computed(() => {
+  return visibleDocumentIds.value.length > 0 && visibleDocumentIds.value.every((id) => selectedDocumentIds.value.includes(id))
+})
 
 const filters = reactive({
   keyword: '',
@@ -166,10 +229,14 @@ const form = reactive({
 
 async function loadEntries() {
   entries.value = await apiGet('/api/kb/entries', filters)
+  const visibleIds = new Set(visibleEntryIds.value)
+  selectedEntryIds.value = selectedEntryIds.value.filter((id) => visibleIds.has(id))
 }
 
 async function loadDocuments() {
   documents.value = await apiGet('/api/kb/documents')
+  const visibleIds = new Set(visibleDocumentIds.value)
+  selectedDocumentIds.value = selectedDocumentIds.value.filter((id) => visibleIds.has(id))
 }
 
 function onFileChange(event) {
@@ -232,10 +299,86 @@ async function saveEntry() {
   }
 }
 
-async function disableEntry(id) {
-  if (!confirm('确认禁用/删除该词条？')) return
+function isEntrySelected(id) {
+  return selectedEntryIds.value.includes(id)
+}
+
+function toggleEntrySelection(id) {
+  if (isEntrySelected(id)) {
+    selectedEntryIds.value = selectedEntryIds.value.filter((selectedId) => selectedId !== id)
+  } else {
+    selectedEntryIds.value = [...selectedEntryIds.value, id]
+  }
+}
+
+function toggleAllEntries() {
+  selectedEntryIds.value = allVisibleSelected.value ? [] : [...visibleEntryIds.value]
+}
+
+function isDocumentSelected(id) {
+  return selectedDocumentIds.value.includes(id)
+}
+
+function toggleDocumentSelection(id) {
+  if (isDocumentSelected(id)) {
+    selectedDocumentIds.value = selectedDocumentIds.value.filter((selectedId) => selectedId !== id)
+  } else {
+    selectedDocumentIds.value = [...selectedDocumentIds.value, id]
+  }
+}
+
+function toggleAllDocuments() {
+  selectedDocumentIds.value = allDocumentsSelected.value ? [] : [...visibleDocumentIds.value]
+}
+
+async function deleteSelectedDocuments() {
+  if (selectedDocumentIds.value.length === 0) return
+  const message = `确认删除选中的 ${selectedDocumentIds.value.length} 条解析记录？该操作会同步删除这些文档生成的问答词条和向量数据。`
+  if (!confirm(message)) return
+  documentDeleting.value = true
+  try {
+    await apiJson('/api/kb/documents/batch-delete', selectedDocumentIds.value, 'POST')
+    selectedDocumentIds.value = []
+    await Promise.all([loadDocuments(), loadEntries()])
+  } finally {
+    documentDeleting.value = false
+  }
+}
+
+async function retryDocument(doc) {
+  if (!doc || doc.processStatus !== 3 || retryingDocumentId.value) return
+  retryingDocumentId.value = doc.id
+  try {
+    const query = new URLSearchParams()
+    if (uploadModule.value) query.append('moduleType', uploadModule.value)
+    await apiJson(`/api/kb/documents/${doc.id}/retry${query.toString() ? `?${query}` : ''}`, {}, 'POST')
+    await Promise.all([loadDocuments(), loadEntries()])
+  } catch (error) {
+    alert(error.message || '重新解析失败')
+    await loadDocuments()
+  } finally {
+    retryingDocumentId.value = null
+  }
+}
+
+async function deleteEntry(id) {
+  if (!confirm('确认真实删除该词条？删除后会同步移除向量数据库中的数据。')) return
   await apiDelete(`/api/kb/entries/${id}`)
+  selectedEntryIds.value = selectedEntryIds.value.filter((selectedId) => selectedId !== id)
   await loadEntries()
+}
+
+async function deleteSelectedEntries() {
+  if (selectedEntryIds.value.length === 0) return
+  if (!confirm(`确认真实删除选中的 ${selectedEntryIds.value.length} 条词条？删除后会同步移除向量数据库中的数据。`)) return
+  batchDeleting.value = true
+  try {
+    await apiJson('/api/kb/entries/batch-delete', selectedEntryIds.value, 'POST')
+    selectedEntryIds.value = []
+    await loadEntries()
+  } finally {
+    batchDeleting.value = false
+  }
 }
 
 function processText(status) {
@@ -266,7 +409,15 @@ onMounted(() => {
 
 .left-column {
   display: grid;
+  grid-template-rows: auto minmax(440px, 1fr);
   gap: 22px;
+  min-height: 0;
+}
+
+.documents-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .drop-zone {
@@ -296,16 +447,40 @@ onMounted(() => {
   margin-top: 12px;
 }
 
+.doc-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-top: 12px;
+}
+
+.doc-list .empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
 .doc-item {
-  height: 70px;
-  display: flex;
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   border: 1px solid #d8e4f5;
   border-radius: 12px;
   padding: 0 14px;
-  margin-top: 12px;
+  margin-bottom: 12px;
   background: #fff;
+}
+
+.doc-item:last-child {
+  margin-bottom: 0;
+}
+
+.doc-item.selected {
+  border-color: #5f8df4;
+  background: #f7faff;
 }
 
 .doc-item strong,
@@ -318,6 +493,26 @@ onMounted(() => {
   margin-top: 4px;
   color: #49659c;
   font-size: 14px;
+}
+
+.doc-selection-bar {
+  min-height: 42px;
+  border: 1px solid #d8e4f5;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0 12px;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compact {
+  padding-inline: 0;
+}
+
+.retry-btn {
+  min-width: 56px;
 }
 
 .panel-head,
@@ -342,6 +537,43 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.selection-bar {
+  min-height: 46px;
+  border: 1px solid #d8e4f5;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0 14px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.check-control,
+.entry-check,
+.doc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #173875;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.check-control input,
+.entry-check input,
+.doc-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: #245edb;
+}
+
+.selection-count {
+  color: #49659c;
+  font-weight: 900;
+  margin-right: auto;
+}
+
 .entry-list {
   display: grid;
   gap: 12px;
@@ -354,8 +586,18 @@ onMounted(() => {
   background: #fff;
   padding: 18px 20px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 24px 1fr auto;
   gap: 16px;
+}
+
+.entry-card.selected {
+  border-color: #5f8df4;
+  background: #f7faff;
+}
+
+.entry-check {
+  align-self: start;
+  padding-top: 2px;
 }
 
 .entry-body h4,
@@ -439,6 +681,10 @@ onMounted(() => {
 @media (max-width: 1200px) {
   .knowledge-grid {
     grid-template-columns: 1fr;
+  }
+
+  .left-column {
+    grid-template-rows: auto 440px;
   }
 }
 </style>

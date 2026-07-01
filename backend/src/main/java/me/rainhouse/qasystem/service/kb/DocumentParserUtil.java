@@ -21,6 +21,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 
 @Component
@@ -50,6 +52,43 @@ public class DocumentParserUtil {
             }
             if (lowerName.endsWith(".txt") || lowerName.endsWith(".md")) {
                 return new ParsedDocument(new String(file.getBytes(), StandardCharsets.UTF_8), "FAQ");
+            }
+        } catch (Exception e) {
+            throw new IllegalArgumentException("文件解析失败: " + e.getMessage(), e);
+        }
+
+        throw new IllegalArgumentException("暂不支持该文件类型，仅支持 xlsx、xls、docx、doc、pdf、txt、md");
+    }
+
+    public ParsedDocument parse(Path path, String filename) {
+        if (!StringUtils.hasText(filename)) {
+            throw new IllegalArgumentException("文件名不能为空");
+        }
+
+        String lowerName = filename.toLowerCase(Locale.ROOT);
+        try {
+            if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+                try (InputStream inputStream = Files.newInputStream(path)) {
+                    return new ParsedDocument(parseExcel(inputStream), "Excel");
+                }
+            }
+            if (lowerName.endsWith(".docx")) {
+                try (InputStream inputStream = Files.newInputStream(path)) {
+                    return new ParsedDocument(parseDocx(inputStream), "Word");
+                }
+            }
+            if (lowerName.endsWith(".doc")) {
+                try (InputStream inputStream = Files.newInputStream(path)) {
+                    return new ParsedDocument(parseDoc(inputStream), "Word");
+                }
+            }
+            if (lowerName.endsWith(".pdf")) {
+                try (InputStream inputStream = Files.newInputStream(path)) {
+                    return new ParsedDocument(parsePdf(inputStream), "PDF");
+                }
+            }
+            if (lowerName.endsWith(".txt") || lowerName.endsWith(".md")) {
+                return new ParsedDocument(Files.readString(path, StandardCharsets.UTF_8), "FAQ");
             }
         } catch (Exception e) {
             throw new IllegalArgumentException("文件解析失败: " + e.getMessage(), e);

@@ -31,7 +31,7 @@
 
       <section class="dashboard-grid">
         <div class="admin-card">
-          <h3 class="section-title">热点问题 Top 5</h3>
+          <h3 class="section-title">常见问题 Top 5</h3>
           <div v-for="(item, index) in hotQuestions.slice(0, 5)" :key="item.name" class="hot-row">
             <div>
               <b>#{{ index + 1 }}</b>
@@ -42,7 +42,7 @@
               <i :style="{ width: barWidth(item.value) }"></i>
             </div>
           </div>
-          <div v-if="hotQuestions.length === 0" class="empty">暂无热点数据</div>
+          <div v-if="hotQuestions.length === 0" class="empty">暂无常见问题数据</div>
         </div>
 
         <div class="admin-card">

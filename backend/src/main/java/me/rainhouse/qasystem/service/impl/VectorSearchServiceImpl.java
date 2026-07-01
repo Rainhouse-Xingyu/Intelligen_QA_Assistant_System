@@ -22,12 +22,21 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 @Slf4j
 @Service
 public class VectorSearchServiceImpl implements VectorSearchService {
+
+    private static final int LEXICAL_CANDIDATE_LIMIT = 40;
+    private static final int MAX_QUERY_TERMS = 12;
 
     private final KbQaEntryService kbQaEntryService;
     private final EmbeddingService embeddingService;
@@ -75,7 +84,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             removeEntry(entry.getId());
             return;
         }
-        String text = entry.getQuestion() + "\n" + entry.getAnswer();
+        String text = embeddingText(entry);
         milvusClientManager.upsert(VectorDocument.from(entry, embeddingService.embed(text)));
     }
 
@@ -87,7 +96,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         milvusClientManager.upsertBatch(entries.stream()
                 .filter(entry -> entry.getId() != null)
                 .filter(entry -> entry.getStatus() == null || entry.getStatus() == 1)
-                .map(entry -> VectorDocument.from(entry, embeddingService.embed(entry.getQuestion() + "\n" + entry.getAnswer())))
+                .map(entry -> VectorDocument.from(entry, embeddingService.embed(embeddingText(entry))))
                 .toList());
     }
 
@@ -106,7 +115,8 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
         int resultLimit = topK == null || topK <= 0 ? defaultTopResults : topK;
         float[] queryVector = embeddingService.embed(query);
-        List<VectorDocument> candidates = milvusClientManager.search(queryVector, moduleType, topCandidates);
+        List<VectorDocument> vectorCandidates = milvusClientManager.search(queryVector, moduleType, topCandidates);
+        List<VectorDocument> candidates = mergeCandidates(vectorCandidates, lexicalCandidates(query, moduleType));
         List<VectorSearchResult> results = rerankService.rerank(query, queryVector, candidates, resultLimit);
         //获取的是相似度最高的那个结果进行返回
         VectorSearchResult topResult = results.isEmpty() ? null : results.get(0);
@@ -134,6 +144,99 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         if (milvusClientManager.size() == 0) {
             rebuildIndex();
         }
+    }
+
+    private String embeddingText(KbQaEntry entry) {
+        String question = entry.getQuestion() == null ? "" : entry.getQuestion().trim();
+        String answer = entry.getAnswer() == null ? "" : entry.getAnswer().trim();
+        return question + "\n" + question + "\n" + answer;
+    }
+
+    private List<VectorDocument> lexicalCandidates(String query, String moduleType) {
+        List<String> terms = extractQueryTerms(query);
+        if (terms.isEmpty()) {
+            return List.of();
+        }
+
+        LambdaQueryWrapper<KbQaEntry> wrapper = new LambdaQueryWrapper<KbQaEntry>()
+                .eq(KbQaEntry::getStatus, 1)
+                .last("limit " + LEXICAL_CANDIDATE_LIMIT);
+        if (StringUtils.hasText(moduleType)) {
+            wrapper.eq(KbQaEntry::getModuleType, moduleType.trim());
+        }
+        wrapper.and(group -> {
+            for (int i = 0; i < terms.size(); i++) {
+                String term = terms.get(i);
+                if (i > 0) {
+                    group.or();
+                }
+                group.like(KbQaEntry::getQuestion, term)
+                        .or()
+                        .like(KbQaEntry::getAnswer, term);
+            }
+        });
+
+        return kbQaEntryService.list(wrapper).stream()
+                .map(entry -> VectorDocument.from(entry, null))
+                .toList();
+    }
+
+    private List<VectorDocument> mergeCandidates(List<VectorDocument> vectorCandidates,
+                                                 List<VectorDocument> lexicalCandidates) {
+        Map<Long, VectorDocument> merged = new LinkedHashMap<>();
+        for (VectorDocument candidate : vectorCandidates) {
+            if (candidate != null && candidate.knowledgeId() != null) {
+                merged.put(candidate.knowledgeId(), candidate);
+            }
+        }
+        for (VectorDocument candidate : lexicalCandidates) {
+            if (candidate != null && candidate.knowledgeId() != null) {
+                merged.putIfAbsent(candidate.knowledgeId(), candidate);
+            }
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    private List<String> extractQueryTerms(String query) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        String compact = query.toLowerCase(Locale.ROOT)
+                .replaceAll("[\\p{Punct}\\p{IsPunctuation}\\s]+", "");
+        if (!StringUtils.hasText(compact)) {
+            return List.of();
+        }
+
+        Set<String> terms = new HashSet<>();
+        addTerm(terms, compact);
+        for (String part : query.toLowerCase(Locale.ROOT).split("[\\p{Punct}\\p{IsPunctuation}\\s]+")) {
+            addTerm(terms, part);
+        }
+        for (int gramSize : List.of(4, 3, 2)) {
+            for (int i = 0; i + gramSize <= compact.length() && terms.size() < MAX_QUERY_TERMS; i++) {
+                addTerm(terms, compact.substring(i, i + gramSize));
+            }
+        }
+        return terms.stream().limit(MAX_QUERY_TERMS).toList();
+    }
+
+    private void addTerm(Set<String> terms, String term) {
+        if (!StringUtils.hasText(term)) {
+            return;
+        }
+        String cleanTerm = term.trim();
+        if (cleanTerm.length() < 2 || cleanTerm.length() > 40) {
+            return;
+        }
+        if (isWeakQueryTerm(cleanTerm)) {
+            return;
+        }
+        terms.add(cleanTerm);
+    }
+
+    private boolean isWeakQueryTerm(String term) {
+        return Set.of("什么", "怎么", "如何", "哪些", "是否", "可以", "需要", "规定", "政策", "要求")
+                .contains(term);
     }
 
     private void saveHitRecord(String query,

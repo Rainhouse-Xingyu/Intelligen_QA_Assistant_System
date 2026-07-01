@@ -3,7 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiGet, apiJson } from '../js/adminApi'
 import MascotLottie from '../components/MascotLottie.vue'
 
-const emit = defineEmits(['login-success'])
+const emit = defineEmits(['login-success', 'go-home'])
 
 const username = ref('')
 const password = ref('')
@@ -141,6 +141,11 @@ onUnmounted(() => {
 <template>
   <main class="login-stage">
     <div class="login-container">
+      <button class="back-home-btn" type="button" @click="emit('go-home')" aria-label="返回主页">
+        <span class="back-home-icon"></span>
+        <span>返回主页</span>
+      </button>
+
       <div class="mascot-section">
         <MascotLottie :mode="activeMascotMode" />
       </div>
@@ -249,6 +254,40 @@ onUnmounted(() => {
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.76);
   box-shadow: 0 28px 80px rgba(16, 72, 155, 0.16);
+}
+
+.back-home-btn {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(47, 140, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #1667df;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(16, 72, 155, 0.1);
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.back-home-btn:hover {
+  border-color: rgba(47, 140, 255, 0.5);
+  background: #fff;
+  transform: translateX(-1px);
+}
+
+.back-home-icon {
+  width: 15px;
+  height: 15px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 5.5 9 12l6.5 6.5-1.4 1.4L6.2 12l7.9-7.9 1.4 1.4z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .mascot-section {
@@ -649,6 +688,14 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
     min-height: auto;
     border-radius: 22px;
+  }
+
+  .back-home-btn {
+    top: 12px;
+    left: 12px;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   .mascot-section {

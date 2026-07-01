@@ -12,7 +12,8 @@ import java.util.List;
 public class KnowledgeChunker {
 
     private static final int MAX_QUESTION_LENGTH = 500;
-    private static final int MAX_ANSWER_CHUNK_LENGTH = 1800;
+    private static final int MAX_ANSWER_CHUNK_LENGTH = 900;
+    private static final int MIN_ANSWER_CHUNK_LENGTH = 320;
 
     public List<KbQaEntry> chunk(List<FaqItem> faqItems,
                                  Long documentId,
@@ -56,15 +57,23 @@ public class KnowledgeChunker {
         }
 
         StringBuilder current = new StringBuilder();
-        for (String paragraph : answer.split("\\n{2,}")) {
-            if (current.length() + paragraph.length() + 2 > MAX_ANSWER_CHUNK_LENGTH && !current.isEmpty()) {
+        for (String paragraph : answer.split("\\n{2,}|(?<=。)|(?<=！)|(?<=？)|(?<=；)|(?<=;)")) {
+            String cleanParagraph = paragraph.trim();
+            if (!StringUtils.hasText(cleanParagraph)) {
+                continue;
+            }
+            if (current.length() + cleanParagraph.length() + 1 > MAX_ANSWER_CHUNK_LENGTH && current.length() >= MIN_ANSWER_CHUNK_LENGTH) {
                 chunks.add(current.toString().trim());
                 current.setLength(0);
             }
-            if (paragraph.length() > MAX_ANSWER_CHUNK_LENGTH) {
-                flushLongParagraph(chunks, paragraph);
+            if (cleanParagraph.length() > MAX_ANSWER_CHUNK_LENGTH) {
+                if (!current.isEmpty()) {
+                    chunks.add(current.toString().trim());
+                    current.setLength(0);
+                }
+                flushLongParagraph(chunks, cleanParagraph);
             } else {
-                current.append(paragraph).append("\n\n");
+                current.append(cleanParagraph).append('\n');
             }
         }
         if (!current.isEmpty()) {
@@ -88,4 +97,5 @@ public class KnowledgeChunker {
         }
         return text.substring(0, maxLength - 1) + "…";
     }
+
 }

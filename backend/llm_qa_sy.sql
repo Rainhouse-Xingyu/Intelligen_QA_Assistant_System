@@ -119,7 +119,7 @@ CREATE TABLE `stat_hot_question` (
   PRIMARY KEY (`id`),
   KEY `idx_stat_date` (`stat_date`),
   KEY `idx_frequency` (`frequency`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='热点问题统计表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='常见问题统计表';
 
 DROP TABLE IF EXISTS `unrecognized_query`;
 CREATE TABLE unrecognized_query (

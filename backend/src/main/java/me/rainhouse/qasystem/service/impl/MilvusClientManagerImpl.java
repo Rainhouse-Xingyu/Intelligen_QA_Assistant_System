@@ -66,24 +66,32 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
         this.questionField = questionField;
         this.knowledgeIdField = knowledgeIdField;
 
-        if (!StringUtils.hasText(apiKey)) {
-            this.client = null;
-            this.available = false;
-            log.warn("Milvus API Key 未配置，向量库功能将暂时禁用；配置 MILVUS_API_KEY 后可恢复。");
-            return;
+        MilvusClientV2 initializedClient = null;
+        boolean initializedAvailable = false;
+        try {
+            ConnectConfig.ConnectConfigBuilder builder = ConnectConfig.builder()
+                    .uri(endpoint);
+            if (StringUtils.hasText(apiKey)) {
+                builder.token(apiKey);
+            }
+            if (StringUtils.hasText(databaseName)) {
+                builder.dbName(databaseName);
+            }
+            initializedClient = new MilvusClientV2(builder.build());
+            initializedAvailable = true;
+            log.info("Milvus 客户端初始化完成，endpoint: {}, auth: {}, collection: {}, database: {}",
+                    endpoint,
+                    StringUtils.hasText(apiKey) ? "token" : "none",
+                    collectionName,
+                    StringUtils.hasText(databaseName) ? databaseName : "default");
+        } catch (Exception ex) {
+            log.warn("Milvus is unavailable; vector database features are disabled, but the backend will keep running. endpoint: {}, error: {}",
+                    endpoint,
+                    ex.getMessage());
+            log.debug("Milvus initialization failed", ex);
         }
-
-        ConnectConfig.ConnectConfigBuilder builder = ConnectConfig.builder()
-                .uri(endpoint);
-        builder.token(apiKey);
-        if (StringUtils.hasText(databaseName)) {
-            builder.dbName(databaseName);
-        }
-        this.client = new MilvusClientV2(builder.build());
-        this.available = true;
-        log.info("远端 Milvus 客户端初始化完成，collection: {}, database: {}",
-                collectionName,
-                StringUtils.hasText(databaseName) ? databaseName : "default");
+        this.client = initializedClient;
+        this.available = initializedAvailable;
     }
 
     @Override

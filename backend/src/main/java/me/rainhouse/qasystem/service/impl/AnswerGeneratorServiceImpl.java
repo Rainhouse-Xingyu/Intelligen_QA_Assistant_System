@@ -3,6 +3,7 @@ package me.rainhouse.qasystem.service.impl;
 import lombok.extern.slf4j.Slf4j;
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
+import me.rainhouse.qasystem.service.ChatMemoryService;
 import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
@@ -16,32 +17,47 @@ import java.util.List;
 public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
 
     private final LocalModelClient localModelClient;
+    private final ChatMemoryService chatMemoryService;
 
     public AnswerGeneratorServiceImpl(AiModelProperties aiModelProperties,
-                                      LocalModelClient localModelClient) {
+                                      LocalModelClient localModelClient,
+                                      ChatMemoryService chatMemoryService) {
         this.localModelClient = localModelClient;
+        this.chatMemoryService = chatMemoryService;
         aiModelProperties.getQwenGeneratorPath();
     }
 
     @Override
     public String generate(String originalQuestion, String rewriteQuestion, VectorSearchResponse searchResponse) {
+        return generate(originalQuestion, rewriteQuestion, searchResponse, "");
+    }
+
+    @Override
+    public String generate(String originalQuestion,
+                           String rewriteQuestion,
+                           VectorSearchResponse searchResponse,
+                           String memoryContext) {
         if (searchResponse == null || searchResponse.results() == null || searchResponse.results().isEmpty()) {
-            log.info("[AI] /generate 跳过：无向量检索结果");
+            log.info("[AI] /generate skipped: no vector search result");
             return null;
         }
         if (searchResponse.hitStatus() == null || searchResponse.hitStatus() == 0) {
-            log.info("[AI] /generate 跳过：hitStatus={}, topScore={}", searchResponse.hitStatus(), searchResponse.topScore());
+            log.info("[AI] /generate skipped: hitStatus={}, topScore={}",
+                    searchResponse.hitStatus(), searchResponse.topScore());
             return null;
         }
 
         if (localModelClient.enabled()) {
-            log.info("[AI] /generate 调用本地模型：hitStatus={}, topScore={}, references={}",
+            log.info("[AI] /generate call local model: hitStatus={}, topScore={}, references={}",
                     searchResponse.hitStatus(), searchResponse.topScore(), searchResponse.results().size());
-            String answer = localModelClient.generate(originalQuestion, rewriteQuestion, searchResponse.results());
+            String answer = localModelClient.generate(
+                    chatMemoryService.buildGenerationQuestion(originalQuestion, memoryContext),
+                    rewriteQuestion,
+                    searchResponse.results());
             if (StringUtils.hasText(answer)) {
                 return answer;
             }
-            log.info("[AI] /generate 本地模型返回空文本，回退知识库首条答案");
+            log.info("[AI] /generate local model returned empty text, fallback to top knowledge answer");
         }
 
         VectorSearchResult top = searchResponse.results().get(0);
@@ -53,13 +69,13 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
 
         List<VectorSearchResult> references = searchResponse.results();
         if (!references.isEmpty()) {
-            answer.append("\n\n参考来源：");
+            answer.append("\n\nReference sources:");
             for (int i = 0; i < Math.min(3, references.size()); i++) {
                 VectorSearchResult result = references.get(i);
                 answer.append("\n").append(i + 1)
-                        .append(". 知识库#").append(result.knowledgeId())
-                        .append("「").append(result.question()).append("」")
-                        .append("，匹配分 ").append(String.format("%.4f", result.finalScore()));
+                        .append(". Knowledge ").append(result.knowledgeId())
+                        .append(" \"").append(result.question()).append("\"")
+                        .append(", score ").append(String.format("%.4f", result.finalScore()));
             }
         }
         return answer.toString();

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.rainhouse.qasystem.config.LocalModelServiceProperties;
 import me.rainhouse.qasystem.common.utils.AiTextSanitizer;
+import me.rainhouse.qasystem.service.kb.FaqItem;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -91,6 +92,24 @@ public class LocalModelClientImpl implements LocalModelClient {
                 "references", refPayload
         ));
         return AiTextSanitizer.stripThinking(node.path("answer").asText(""));
+    }
+
+    @Override
+    public List<FaqItem> chunkToFaq(String text, String title, int maxItems) {
+        JsonNode node = post("/chunk", Map.of(
+                "text", text == null ? "" : text,
+                "title", title == null ? "" : title,
+                "maxItems", Math.max(1, maxItems)
+        ));
+        List<FaqItem> items = new ArrayList<>();
+        node.path("items").forEach(item -> {
+            String question = item.path("question").asText("").trim();
+            String answer = item.path("answer").asText("").trim();
+            if (!question.isEmpty() && !answer.isEmpty()) {
+                items.add(new FaqItem(question, answer));
+            }
+        });
+        return items;
     }
 
     @Override
