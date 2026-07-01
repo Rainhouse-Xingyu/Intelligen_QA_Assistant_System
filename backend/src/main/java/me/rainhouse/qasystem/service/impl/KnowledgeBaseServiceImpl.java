@@ -100,6 +100,64 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
     }
 
     @Override
+    public KbDocument reprocessDocument(Long documentId, String operatorId, String moduleType) {
+        if (documentId == null) {
+            throw new IllegalArgumentException("缺少文档ID");
+        }
+        KbDocument document = this.getById(documentId);
+        if (document == null) {
+            throw new IllegalArgumentException("解析记录不存在");
+        }
+        if (!StringUtils.hasText(document.getFileUrl())) {
+            throw new IllegalArgumentException("原始文件路径不存在，请重新上传");
+        }
+
+        Path storedPath = resolveStoredPath(document.getFileUrl());
+        if (!Files.exists(storedPath)) {
+            throw new IllegalArgumentException("原始文件已丢失，请重新上传");
+        }
+
+        document.setProcessStatus(1);
+        document.setProcessMessage("正在重新解析");
+        this.updateById(document);
+
+        try {
+            ParsedDocument parsedDocument = documentParserUtil.parse(storedPath, document.getFileName());
+            List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName());
+            String createdBy = StringUtils.hasText(operatorId) ? operatorId : document.getUploaderId();
+            List<KbQaEntry> entries = knowledgeChunker.chunk(
+                    faqItems,
+                    document.getId(),
+                    createdBy,
+                    normalizeModuleType(moduleType),
+                    parsedDocument.sourceType()
+            );
+
+            if (entries.isEmpty()) {
+                document.setProcessStatus(3);
+                document.setProcessMessage("未能从文档中提取到有效 FAQ 条目");
+                this.updateById(document);
+                return document;
+            }
+
+            removeEntriesByDocumentId(document.getId());
+            kbQaEntryService.saveBatch(entries);
+            vectorSearchService.upsertEntries(entries);
+            document.setProcessStatus(2);
+            document.setProcessMessage("解析成功，已生成 " + entries.size() + " 条知识库词条");
+            this.updateById(document);
+            log.info("知识库文档重新解析成功 documentId={}, entries={}", document.getId(), entries.size());
+            return document;
+        } catch (Exception e) {
+            log.error("知识库文档重新解析失败 documentId={}, file={}", document.getId(), document.getFileName(), e);
+            document.setProcessStatus(3);
+            document.setProcessMessage(limitMessage(e.getMessage()));
+            this.updateById(document);
+            return document;
+        }
+    }
+
+    @Override
     public List<KbDocument> listDocuments(Integer processStatus) {
         LambdaQueryWrapper<KbDocument> wrapper = new LambdaQueryWrapper<KbDocument>()
                 .orderByDesc(KbDocument::getCreatedAt);
@@ -107,6 +165,45 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             wrapper.eq(KbDocument::getProcessStatus, processStatus);
         }
         return this.list(wrapper);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public int deleteDocuments(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        List<Long> distinctIds = ids.stream()
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (distinctIds.isEmpty()) {
+            return 0;
+        }
+
+        List<KbDocument> documents = this.listByIds(distinctIds);
+        if (documents.isEmpty()) {
+            return 0;
+        }
+        List<Long> existingDocumentIds = documents.stream()
+                .map(KbDocument::getId)
+                .toList();
+
+        List<KbQaEntry> relatedEntries = kbQaEntryService.list(new LambdaQueryWrapper<KbQaEntry>()
+                .in(KbQaEntry::getDocumentId, existingDocumentIds));
+        if (!relatedEntries.isEmpty()) {
+            List<Long> relatedEntryIds = relatedEntries.stream()
+                    .map(KbQaEntry::getId)
+                    .toList();
+            kbQaEntryService.removeByIds(relatedEntryIds);
+            relatedEntryIds.forEach(vectorSearchService::removeEntry);
+        }
+
+        boolean removed = this.removeByIds(existingDocumentIds);
+        if (removed) {
+            documents.forEach(this::deleteStoredFileQuietly);
+        }
+        return removed ? existingDocumentIds.size() : 0;
     }
 
     @Override
@@ -186,7 +283,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
 
     @Transactional(rollbackFor = Exception.class)
     @Override
-    public boolean disableEntry(Long id) {
+    public boolean deleteEntry(Long id) {
         if (id == null) {
             return false;
         }
@@ -194,13 +291,40 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         if (entry == null) {
             return false;
         }
-        entry.setStatus(0);
-        entry.setUpdatedAt(LocalDateTime.now());
-        boolean updated = kbQaEntryService.updateById(entry);
-        if (updated) {
+        boolean removed = kbQaEntryService.removeById(entry.getId());
+        if (removed) {
             vectorSearchService.removeEntry(entry.getId());
         }
-        return updated;
+        return removed;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public int deleteEntries(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        List<Long> distinctIds = ids.stream()
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (distinctIds.isEmpty()) {
+            return 0;
+        }
+
+        List<KbQaEntry> existingEntries = kbQaEntryService.listByIds(distinctIds);
+        if (existingEntries.isEmpty()) {
+            return 0;
+        }
+
+        List<Long> existingIds = existingEntries.stream()
+                .map(KbQaEntry::getId)
+                .toList();
+        boolean removed = kbQaEntryService.removeByIds(existingIds);
+        if (removed) {
+            existingIds.forEach(vectorSearchService::removeEntry);
+        }
+        return removed ? existingIds.size() : 0;
     }
 
     private void validateFile(MultipartFile file) {
@@ -217,6 +341,45 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                 || lowerName.endsWith(".pdf") || lowerName.endsWith(".txt")
                 || lowerName.endsWith(".md"))) {
             throw new IllegalArgumentException("仅支持 xlsx、xls、docx、doc、pdf、txt、md 文件");
+        }
+    }
+
+    private void removeEntriesByDocumentId(Long documentId) {
+        List<KbQaEntry> relatedEntries = kbQaEntryService.list(new LambdaQueryWrapper<KbQaEntry>()
+                .eq(KbQaEntry::getDocumentId, documentId));
+        if (relatedEntries.isEmpty()) {
+            return;
+        }
+        List<Long> relatedEntryIds = relatedEntries.stream()
+                .map(KbQaEntry::getId)
+                .toList();
+        kbQaEntryService.removeByIds(relatedEntryIds);
+        relatedEntryIds.forEach(vectorSearchService::removeEntry);
+    }
+
+    private Path resolveStoredPath(String fileUrl) {
+        Path path = Paths.get(fileUrl);
+        if (!path.isAbsolute()) {
+            path = Paths.get(System.getProperty("user.dir")).resolve(path);
+        }
+        return path.normalize();
+    }
+
+    private void deleteStoredFileQuietly(KbDocument document) {
+        if (document == null || !StringUtils.hasText(document.getFileUrl())) {
+            return;
+        }
+        try {
+            Path path = Paths.get(document.getFileUrl());
+            if (!path.isAbsolute()) {
+                path = Paths.get(System.getProperty("user.dir")).resolve(path);
+            }
+            Files.deleteIfExists(path.normalize());
+        } catch (Exception e) {
+            log.warn("删除知识库上传文件失败: documentId={}, fileUrl={}, error={}",
+                    document.getId(),
+                    document.getFileUrl(),
+                    e.getMessage());
         }
     }
 

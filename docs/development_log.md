@@ -150,11 +150,11 @@
 
 ---
 
-## Commit: 250f5c4c — 数据统计与热门问题管理
+## Commit: 250f5c4c — 数据统计与常见问题管理
 
 ### 变更内容
 - 实现 `StatHotQuestion` 实体、Mapper、Service、Controller
-- 实现热点统计、重建、兜底概览
+- 实现常见问题统计、重建、兜底概览
 - `DataStatController` / `DataStatService`
 
 ---

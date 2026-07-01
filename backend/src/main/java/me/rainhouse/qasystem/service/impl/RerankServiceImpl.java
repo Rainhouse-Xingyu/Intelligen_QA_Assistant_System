@@ -48,7 +48,11 @@ public class RerankServiceImpl implements RerankService {
     private VectorSearchResult toResult(String query, float[] queryVector, VectorDocument document, double rerankScore) {
         double vectorScore = cosine(queryVector, document.vector());
         double lexicalScore = lexicalScore(query, document.question() + "\n" + document.answer());
-        double finalScore = Math.max(0.0, Math.min(1.0, rerankScore));
+        double normalizedRerankScore = Math.max(0.0, Math.min(1.0, rerankScore));
+        double finalScore = Math.max(
+                normalizedRerankScore * 0.6 + vectorScore * 0.25 + lexicalScore * 0.15,
+                lexicalScore * 0.75
+        );
         return new VectorSearchResult(
                 document.knowledgeId(),
                 document.question(),
@@ -56,7 +60,7 @@ public class RerankServiceImpl implements RerankService {
                 document.moduleType(),
                 document.sourceType(),
                 round(vectorScore),
-                round(lexicalScore),
+                round(normalizedRerankScore),
                 round(finalScore)
         );
     }
@@ -64,7 +68,10 @@ public class RerankServiceImpl implements RerankService {
     private VectorSearchResult toResult(String query, float[] queryVector, VectorDocument document) {
         double vectorScore = cosine(queryVector, document.vector());
         double lexicalScore = lexicalScore(query, document.question() + "\n" + document.answer());
-        double finalScore = Math.max(vectorScore, vectorScore * 0.75 + lexicalScore * 0.25);
+        double finalScore = Math.max(
+                vectorScore,
+                Math.max(vectorScore * 0.65 + lexicalScore * 0.35, lexicalScore * 0.8)
+        );
         return new VectorSearchResult(
                 document.knowledgeId(),
                 document.question(),
@@ -116,7 +123,33 @@ public class RerankServiceImpl implements RerankService {
             }
         }
         flushAscii(tokens, asciiWord);
+        addCjkNgrams(tokens, normalized, 2);
+        addCjkNgrams(tokens, normalized, 3);
         return tokens;
+    }
+
+    private void addCjkNgrams(Set<String> tokens, String text, int size) {
+        StringBuilder cjkRun = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (isCjk(ch)) {
+                cjkRun.append(ch);
+            } else {
+                flushCjkNgrams(tokens, cjkRun, size);
+            }
+        }
+        flushCjkNgrams(tokens, cjkRun, size);
+    }
+
+    private void flushCjkNgrams(Set<String> tokens, StringBuilder cjkRun, int size) {
+        if (cjkRun.length() < size) {
+            cjkRun.setLength(0);
+            return;
+        }
+        for (int i = 0; i + size <= cjkRun.length(); i++) {
+            tokens.add(cjkRun.substring(i, i + size));
+        }
+        cjkRun.setLength(0);
     }
 
     private boolean isCjk(char ch) {

@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiGet, apiForm } from './adminApi'
 
 export default {
@@ -8,6 +8,8 @@ export default {
     const question = ref('')
     const selectedCategory = ref(null)
     const shakeAlert = ref(false)
+    const logoRef = ref(null)
+    const logoTone = ref('logo--dark')
     const categories = [
       { label: '考务', value: '考务通知' },
       { label: '教学', value: '教学运行' },
@@ -19,6 +21,65 @@ export default {
     const userInfo = ref(null)
 
     const isStudent = computed(() => userInfo.value?.role === 1)
+
+    const parseRgb = (value) => {
+      const match = value?.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([.\d]+))?\)/)
+      if (!match) return null
+      const alpha = match[4] === undefined ? 1 : Number(match[4])
+      if (alpha === 0) return null
+      return {
+        r: Number(match[1]),
+        g: Number(match[2]),
+        b: Number(match[3])
+      }
+    }
+
+    const findBackgroundColor = (element) => {
+      let current = element
+
+      while (current && current !== document.documentElement) {
+        const color = parseRgb(getComputedStyle(current).backgroundColor)
+        if (color) return color
+        current = current.parentElement
+      }
+
+      return parseRgb(getComputedStyle(document.body).backgroundColor)
+        || parseRgb(getComputedStyle(document.documentElement).backgroundColor)
+        || { r: 255, g: 255, b: 255 }
+    }
+
+    const getLuminance = ({ r, g, b }) => (0.299 * r) + (0.587 * g) + (0.114 * b)
+
+    const updateLogoTone = () => {
+      const logo = logoRef.value
+      if (!logo) return
+
+      const rect = logo.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+
+      const samplePoints = [
+        [rect.left + rect.width / 2, rect.top + rect.height / 2],
+        [rect.left + 8, rect.top + 8],
+        [rect.right - 8, rect.top + 8],
+        [rect.left + 8, rect.bottom - 8],
+        [rect.right - 8, rect.bottom - 8]
+      ]
+
+      const luminanceSamples = samplePoints
+        .map(([x, y]) => document.elementFromPoint(x, y))
+        .filter(Boolean)
+        .map(findBackgroundColor)
+        .map(getLuminance)
+
+      const average = luminanceSamples.length
+        ? luminanceSamples.reduce((sum, value) => sum + value, 0) / luminanceSamples.length
+        : 255
+
+      const nextTone = average > 150 ? 'logo--dark' : 'logo--light'
+      if (logoTone.value !== nextTone) {
+        logoTone.value = nextTone
+      }
+    }
 
     // --- Sidebar state ---
     const conversations = ref([])
@@ -139,14 +200,40 @@ export default {
       question.value = ''
     }
 
+    let logoToneTimer = 0
+    let logoToneFrame = 0
+
+    const scheduleLogoToneUpdate = () => {
+      if (logoToneFrame) return
+      logoToneFrame = window.requestAnimationFrame(() => {
+        logoToneFrame = 0
+        updateLogoTone()
+      })
+    }
+
     onMounted(() => {
       restoreSession()
+      nextTick(scheduleLogoToneUpdate)
+      window.addEventListener('resize', scheduleLogoToneUpdate)
+      window.addEventListener('scroll', scheduleLogoToneUpdate, true)
+      logoToneTimer = window.setInterval(scheduleLogoToneUpdate, 1000)
+    })
+
+    onUnmounted(() => {
+      window.removeEventListener('resize', scheduleLogoToneUpdate)
+      window.removeEventListener('scroll', scheduleLogoToneUpdate, true)
+      if (logoToneFrame) {
+        window.cancelAnimationFrame(logoToneFrame)
+      }
+      window.clearInterval(logoToneTimer)
     })
 
     return {
       question,
       selectedCategory,
       shakeAlert,
+      logoRef,
+      logoTone,
       categories,
       isLoggedIn,
       userInfo,

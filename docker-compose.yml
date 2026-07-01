@@ -163,6 +163,18 @@ services:
     depends_on:
       - backend
 
+  attu:
+    image: zilliz/attu:latest
+    container_name: attu
+    restart: unless-stopped
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "${ATTU_PORT:-8000}:3000"
+    depends_on:
+      milvus:
+        condition: service_healthy
+
 volumes:
   mysql-data:
   redis-data:

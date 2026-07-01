@@ -366,7 +366,7 @@ public class ChatController {
     }
 
     /**
-     * 【4.2模块】主动推送热点问题
+     * 【4.2模块】主动推送常见问题
      * 适合在用户初次打开对话窗口时拉取，作为快速点击的 Suggestion 气泡
      */
     @GetMapping("/suggested-questions")

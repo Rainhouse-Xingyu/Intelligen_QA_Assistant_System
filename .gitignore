@@ -4,6 +4,7 @@ target/
 .venv/
 __pycache__/
 *.pyc
+*.log
 .idea/
 .vscode/
 .DS_Store

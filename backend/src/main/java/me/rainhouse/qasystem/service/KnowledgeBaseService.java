@@ -11,7 +11,11 @@ public interface KnowledgeBaseService extends IService<KbDocument> {
 
     KbDocument importDocument(MultipartFile file, String uploaderId, String moduleType);
 
+    KbDocument reprocessDocument(Long documentId, String operatorId, String moduleType);
+
     List<KbDocument> listDocuments(Integer processStatus);
+
+    int deleteDocuments(List<Long> ids);
 
     List<KbQaEntry> listEntries(String keyword, String moduleType, Integer status, String sourceType);
 
@@ -19,5 +23,7 @@ public interface KnowledgeBaseService extends IService<KbDocument> {
 
     KbQaEntry updateEntry(KbQaEntry entry);
 
-    boolean disableEntry(Long id);
+    boolean deleteEntry(Long id);
+
+    int deleteEntries(List<Long> ids);
 }

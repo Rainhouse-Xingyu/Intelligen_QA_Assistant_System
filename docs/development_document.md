@@ -81,14 +81,14 @@
 
 | 功能 | 状态 | 备注 |
 |------|------|------|
-| 热门问题列表 | ✅ 完成 | `GET /api/stat/hot-questions` |
-| 重建热点 | ✅ 完成 | `POST /api/stat/hot-questions/rebuild` |
+| 常见问题列表 | ✅ 完成 | `GET /api/stat/hot-questions` |
+| 重建常见问题 | ✅ 完成 | `POST /api/stat/hot-questions/rebuild` |
 | 兜底数据概览 | ✅ 完成 | `GET /api/stat/fallback-overview` |
 | 数据看板页 (前端) | ✅ 完成 | `dashboard.vue` |
 | 未识别问题列表 | ✅ 完成 | `GET /api/admin/unrecognized/list` |
 | 未识别问题状态更新 | ✅ 完成 | `POST /api/admin/unrecognized/update-status` |
-| 热门问题主动推送 | ❌ 未开发 | 计划: 登录 WebSocket 推送 "猜你想问" |
-| 热点词云/趋势图 (ECharts) | ❌ 未开发 | 计划: dashboard 前端接入 ECharts |
+| 常见问题主动推送 | ❌ 未开发 | 计划: 登录 WebSocket 推送 "猜你想问" |
+| 常见问题词云/趋势图 (ECharts) | ❌ 未开发 | 计划: dashboard 前端接入 ECharts |
 
 ### 5. 人工客服模块 (Human Customer Service)
 
@@ -154,7 +154,7 @@
 | `biz_contact` | 业务联系教师 | ✅ |
 | `kb_document` | 知识库原始文档 | ✅ |
 | `kb_qa_entry` | 问答词条 | ✅ |
-| `stat_hot_question` | 热门问题统计 | ✅ |
+| `stat_hot_question` | 常见问题统计 | ✅ |
 | `unrecognized_query` | 未识别问题 | ✅ |
 | `student_profile` | 学生画像 | ✅ |
 | `academic_warning_record` | 学业预警记录 | ✅ |
@@ -171,7 +171,7 @@
 
 1. **数据脱敏拦截器** — 安全底线。AOP 拦截所有出栈请求，对学号、姓名、电话、邮箱做正则替换，防止裸数据流出系统
 2. **WebSocket 断线重连** — 影响客服模块稳定性。前端建立 WebSocket 自动重连逻辑 + 用户提示
-3. **热门问题主动推送** — 用户登录/打开首页时，WebSocket 下推热点问题列表
+3. **常见问题主动推送** — 用户登录/打开首页时，WebSocket 下推常见问题列表
 
 ### 优先级中
 

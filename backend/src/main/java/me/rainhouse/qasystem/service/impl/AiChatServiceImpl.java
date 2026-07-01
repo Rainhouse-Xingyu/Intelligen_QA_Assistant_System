@@ -6,6 +6,7 @@ import me.rainhouse.qasystem.entity.QuestionRaw;
 import me.rainhouse.qasystem.mapper.QuestionRawMapper;
 import me.rainhouse.qasystem.service.AiChatService;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
+import me.rainhouse.qasystem.service.ChatMemoryService;
 import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.IntentClassifierService;
 import me.rainhouse.qasystem.service.QueryRewriteService;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -29,6 +31,7 @@ public class AiChatServiceImpl implements AiChatService {
     private final AnswerGeneratorService answerGeneratorService;
     private final CozeService cozeService;
     private final UnrecognizedQueryService unrecognizedQueryService;
+    private final ChatMemoryService chatMemoryService;
 
     public AiChatServiceImpl(QuestionRawMapper questionRawMapper,
                              QueryRewriteService queryRewriteService,
@@ -36,7 +39,8 @@ public class AiChatServiceImpl implements AiChatService {
                              VectorSearchService vectorSearchService,
                              AnswerGeneratorService answerGeneratorService,
                              CozeService cozeService,
-                             UnrecognizedQueryService unrecognizedQueryService) {
+                             UnrecognizedQueryService unrecognizedQueryService,
+                             ChatMemoryService chatMemoryService) {
         this.questionRawMapper = questionRawMapper;
         this.queryRewriteService = queryRewriteService;
         this.intentClassifierService = intentClassifierService;
@@ -44,22 +48,30 @@ public class AiChatServiceImpl implements AiChatService {
         this.answerGeneratorService = answerGeneratorService;
         this.cozeService = cozeService;
         this.unrecognizedQueryService = unrecognizedQueryService;
+        this.chatMemoryService = chatMemoryService;
     }
 
     @Override
     public AiChatResponse chat(Long userId, Long sessionId, String query, String selectedModuleType) {
         if (!StringUtils.hasText(query)) {
-            throw new IllegalArgumentException("提问内容不能为空");
+            throw new IllegalArgumentException("Question cannot be empty");
         }
 
         long start = System.currentTimeMillis();
+        String memoryContext = chatMemoryService.buildRecentContext(sessionId, query);
         String rewriteQuestion = queryRewriteService.rewrite(query);
-        String moduleType = intentClassifierService.classify(rewriteQuestion, selectedModuleType);
+        String retrievalQuestion = chatMemoryService.buildRetrievalQuery(rewriteQuestion, memoryContext);
+        String moduleType = intentClassifierService.classify(retrievalQuestion, selectedModuleType);
         saveRawQuestion(userId, sessionId, query, moduleType);
 
-        VectorSearchResponse searchResponse = vectorSearchService.search(rewriteQuestion, moduleType, 3, userId, sessionId);
-        String answer = answerGeneratorService.generate(query, rewriteQuestion, searchResponse);
+        VectorSearchResponse searchResponse = vectorSearchService.search(retrievalQuestion, moduleType, 3, userId, sessionId);
+        String answer = answerGeneratorService.generate(query, rewriteQuestion, searchResponse, memoryContext);
         String answerSource = "RAG";
+
+        if (isEchoAnswer(query, answer)) {
+            log.warn("[AI] generated answer echoed the question, fallback to knowledge answer. sessionId={}", sessionId);
+            answer = firstKnowledgeAnswer(searchResponse);
+        }
 
         if (!StringUtils.hasText(answer)) {
             answer = firstKnowledgeAnswer(searchResponse);
@@ -94,6 +106,25 @@ public class AiChatServiceImpl implements AiChatService {
                 .filter(StringUtils::hasText)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private boolean isEchoAnswer(String query, String answer) {
+        String normalizedQuery = normalizeForCompare(query);
+        String normalizedAnswer = normalizeForCompare(answer);
+        if (!StringUtils.hasText(normalizedQuery) || !StringUtils.hasText(normalizedAnswer)) {
+            return false;
+        }
+        return normalizedAnswer.equals(normalizedQuery)
+                || (normalizedAnswer.length() <= normalizedQuery.length() + 4
+                && normalizedAnswer.contains(normalizedQuery));
+    }
+
+    private String normalizeForCompare(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.replaceAll("[\\p{Punct}\\p{IsPunctuation}\\s]+", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     private void saveRawQuestion(Long userId, Long sessionId, String originalQuestion, String moduleType) {

@@ -2,12 +2,20 @@
   <div class="app-container">
     <Knowledge v-if="currentPage === 'knowledge'" />
     <SurveyAdmin v-else-if="currentPage === 'survey-admin'" />
-    <StudentSurvey v-else-if="currentPage === 'student-survey'" @go-home="currentPage = 'home'" @navigate-login="currentPage = 'login'" />
+    <StudentSurvey
+      v-else-if="currentPage === 'student-survey'"
+      @go-home="currentPage = 'home'"
+      @navigate-login="currentPage = 'login'"
+    />
     <VectorPage v-else-if="currentPage === 'vector'" />
     <Dashboard v-else-if="currentPage === 'dashboard'" />
     <Academic v-else-if="currentPage === 'academic'" />
     <AdminChat v-else-if="currentPage === 'admin-chat'" />
-    <LoginPage v-else-if="currentPage === 'login'" @login-success="onLoginSuccess" />
+    <LoginPage
+      v-else-if="currentPage === 'login'"
+      @login-success="onLoginSuccess"
+      @go-home="currentPage = 'home'"
+    />
     <Home
       v-else-if="currentPage === 'home'"
       @start-chat="onStartChat"

@@ -474,12 +474,12 @@ data: AiChatResponse 完整 JSON
 }
 ```
 
-### 3.9 获取推荐热点问题
+### 3.9 获取推荐常见问题
 
 | 项 | 内容 |
 |---|---|
 | 全路径类名+方法名 | `me.rainhouse.qasystem.controller.ChatController.getSuggestedQuestions` |
-| 方法注释 | 主动推送热点问题，供前端展示快速点击气泡 |
+| 方法注释 | 主动推送常见问题，供前端展示快速点击气泡 |
 | 请求方式 | `GET` |
 | 请求路径 | `/api/chat/suggested-questions` |
 
@@ -839,12 +839,12 @@ me.rainhouse.qasystem.common.dto.VectorSearchRequest
 
 ## 6. 数据统计与兜底闭环
 
-### 6.1 获取热点咨询问题
+### 6.1 获取常见咨询问题
 
 | 项 | 内容 |
 |---|---|
 | 全路径类名+方法名 | `me.rainhouse.qasystem.controller.DataStatController.getHotQuestions` |
-| 方法注释 | 获取热点咨询问题，供 ECharts 词云或榜单接入 |
+| 方法注释 | 获取常见咨询问题，供 ECharts 词云或榜单接入 |
 | 请求方式 | `GET` |
 | 请求路径 | `/api/stat/hot-questions` |
 
@@ -873,12 +873,12 @@ me.rainhouse.qasystem.common.dto.VectorSearchRequest
 }
 ```
 
-### 6.2 手动重建热点问题统计
+### 6.2 手动重建常见问题统计
 
 | 项 | 内容 |
 |---|---|
 | 全路径类名+方法名 | `me.rainhouse.qasystem.controller.DataStatController.rebuildHotQuestions` |
-| 方法注释 | 手动重建热点问题统计，便于管理员立即刷新报表 |
+| 方法注释 | 手动重建常见问题统计，便于管理员立即刷新报表 |
 | 请求方式 | `POST` |
 | 请求路径 | `/api/stat/hot-questions/rebuild` |
 
@@ -889,7 +889,7 @@ me.rainhouse.qasystem.common.dto.VectorSearchRequest
 | `statDate` | query | string | 否 | 指定统计日期，格式 `YYYY-MM-DD` |
 | `days` | query | number | 否 | 重建最近 N 天。传入后优先于 `statDate` |
 
-返回值含义：写入的热点统计条数。
+返回值含义：写入的常见问题统计条数。
 
 返回值结构：
 

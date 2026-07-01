@@ -25,7 +25,7 @@ public class DataStatController {
     private DataStatService dataStatService;
 
     /**
-     * 【4.1 核心功能】获取热点咨询问题，供前端 ECharts (如词云数据) 接入
+     * 【4.1 核心功能】获取常见咨询问题，供前端 ECharts (如词云数据) 接入
      */
     @GetMapping("/hot-questions")
     public Result<List<Map<String, Object>>> getHotQuestions(
@@ -36,7 +36,7 @@ public class DataStatController {
     }
 
     /**
-     * 手动重建热点问题统计，便于管理员立即刷新报表。
+     * 手动重建常见问题统计，便于管理员立即刷新报表。
      */
     @PostMapping("/hot-questions/rebuild")
     public Result<Integer> rebuildHotQuestions(

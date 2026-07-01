@@ -54,6 +54,34 @@ public class KnowledgeBaseController {
         return Result.success(knowledgeBaseService.listDocuments(processStatus));
     }
 
+    @PostMapping("/documents/{id}/retry")
+    public Result<KbDocument> retryDocument(@PathVariable Long id,
+                                            @RequestParam(value = "moduleType", required = false) String moduleType,
+                                            HttpServletRequest request) {
+        try {
+            String adminId = getAdminIdOpt(request);
+            KbDocument doc = knowledgeBaseService.reprocessDocument(id, adminId, moduleType);
+            if (doc.getProcessStatus() == 2) {
+                return Result.success(doc);
+            }
+            return Result.error(doc.getProcessMessage() != null ? doc.getProcessMessage() : "文件重新解析失败");
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 【3.1模块】批量删除解析记录，并同步删除该文档生成的问答词条和向量数据。
+     */
+    @PostMapping("/documents/batch-delete")
+    public Result<Integer> deleteDocuments(@RequestBody List<Long> ids) {
+        int removedCount = knowledgeBaseService.deleteDocuments(ids);
+        if (removedCount > 0) {
+            return Result.success(removedCount);
+        }
+        return Result.error("未找到可删除的解析记录");
+    }
+
     /**
      * 【3.2模块】查询已落库的问答词条，支持关键字、模块、状态、来源过滤。
      */
@@ -92,13 +120,25 @@ public class KnowledgeBaseController {
     }
 
     /**
-     * 【3.2模块】禁用或删除知识库词条
+     * 【3.2模块】真实删除知识库词条，并同步删除向量库数据
      */
     @DeleteMapping("/entries/{id}")
-    public Result<String> disableEntry(@PathVariable Long id) {
-        if (knowledgeBaseService.disableEntry(id)) {
-            return Result.success("词条已成功禁用/删除");
+    public Result<String> deleteEntry(@PathVariable Long id) {
+        if (knowledgeBaseService.deleteEntry(id)) {
+            return Result.success("词条已成功删除");
         }
         return Result.error("词条不存在");
+    }
+
+    /**
+     * 【3.2模块】批量真实删除知识库词条，并同步删除向量库数据
+     */
+    @PostMapping("/entries/batch-delete")
+    public Result<Integer> deleteEntries(@RequestBody List<Long> ids) {
+        int removedCount = knowledgeBaseService.deleteEntries(ids);
+        if (removedCount > 0) {
+            return Result.success(removedCount);
+        }
+        return Result.error("未找到可删除的词条");
     }
 }

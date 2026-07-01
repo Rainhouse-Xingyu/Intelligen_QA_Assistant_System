@@ -2,8 +2,8 @@
   <div class="home-page">
     <!-- Navbar -->
     <nav class="navbar">
-      <div class="logo">
-         <img src="/nui_small_white.png" alt="DNUI Logo" />
+      <div ref="logoRef" :class="['logo', logoTone]">
+         <img src="/dnui-logo-white.png" alt="DNUI Logo" />
       </div>
       <div class="nav-menus">
          <div class="nav-item">
