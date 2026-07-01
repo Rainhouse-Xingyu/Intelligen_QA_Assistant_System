@@ -1,15 +1,55 @@
-version: "3.8"
-
 services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-llm_qa_sy}
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backend/llm_qa_sy.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-redis-password}
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+      redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
+      else redis-server --appendonly yes; fi'
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD}\" ]; then redis-cli -a \"$${REDIS_PASSWORD}\" ping; else redis-cli ping; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
+    restart: unless-stopped
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
       - ETCD_QUOTA_BACKEND_BYTES=4294967296
       - ETCD_SNAPSHOT_COUNT=50000
     volumes:
-      - ./milvus-data/etcd:/etcd
+      - milvus-etcd:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
@@ -19,11 +59,12 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    restart: unless-stopped
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
-      - ./milvus-data/minio:/minio_data
+      - milvus-minio:/minio_data
     command: minio server /minio_data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -33,6 +74,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.4.0
+    restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -40,7 +82,7 @@ services:
       MINIO_ACCESS_KEY_ID: minioadmin
       MINIO_SECRET_ACCESS_KEY: minioadmin
     volumes:
-      - ./milvus-data/milvus:/var/lib/milvus
+      - milvus-data:/var/lib/milvus
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
@@ -48,14 +90,87 @@ services:
       timeout: 20s
       retries: 3
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_HEALTH_PORT:-9091}:9091"
     depends_on:
       etcd:
         condition: service_healthy
       minio:
         condition: service_healthy
 
+  model-service:
+    build:
+      context: ./backend/model-service
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 18080
+      AIGE_MODEL_BASE: /opt/aige-models
+      AIGE_MODEL_DEVICE: ${AIGE_MODEL_DEVICE:-cpu}
+    volumes:
+      - ${AIGE_MODEL_BASE_HOST:-/opt/aige-models}:/opt/aige-models:ro
+    ports:
+      - "${MODEL_SERVICE_PORT:-18080}:18080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SERVER_PORT: 8080
+      MYSQL_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-llm_qa_sy}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root-password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DATABASE: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-redis-password}
+      MILVUS_ENDPOINT: http://milvus:19530
+      LOCAL_MODEL_SERVICE_URL: http://model-service:18080
+      KNOWLEDGE_UPLOAD_DIR: /app/uploads/kb
+      TTS_OUTPUT_DIR: /app/uploads/audio
+      COZE_API_TOKEN: ${COZE_API_TOKEN:-}
+      VOLCENGINE_SPEECH_APP_ID: ${VOLCENGINE_SPEECH_APP_ID:-}
+      VOLCENGINE_SPEECH_ACCESS_TOKEN: ${VOLCENGINE_SPEECH_ACCESS_TOKEN:-}
+      VOLCENGINE_SPEECH_SECRET_KEY: ${VOLCENGINE_SPEECH_SECRET_KEY:-}
+    volumes:
+      - app-uploads:/app/uploads
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      model-service:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql-data:
+  redis-data:
+  milvus-etcd:
+  milvus-minio:
+  milvus-data:
+  app-uploads:
+
 networks:
   default:
-    name: milvus
+    name: intelligent-qa-assistant
