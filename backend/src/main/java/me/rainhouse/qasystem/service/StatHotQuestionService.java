@@ -23,6 +23,14 @@ public interface StatHotQuestionService extends IService<StatHotQuestion> {
     List<Map<String, Object>> getHotQuestions(int days, int limit);
 
     /**
+     * 获取可在学生端直接展示答案的常见问题。
+     *
+     * @param limit 返回最多多少条
+     * @return 包含 questionText、answerText、moduleType 的常见问题列表
+     */
+    List<Map<String, Object>> getSuggestedQuestionAnswers(int limit);
+
+    /**
      * 重建指定日期的常见问题统计。
      *
      * @param statDate 统计日期

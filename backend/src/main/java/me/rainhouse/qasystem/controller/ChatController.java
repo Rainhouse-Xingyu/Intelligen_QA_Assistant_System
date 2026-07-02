@@ -376,8 +376,7 @@ public class ChatController {
      */
     @GetMapping("/suggested-questions")
     public Result<List<Map<String, Object>>> getSuggestedQuestions() {
-        // 直接取近7天热度最高的5个提问词推荐给前端
-        return Result.success(statHotQuestionService.getHotQuestions(7, 5));
+        return Result.success(statHotQuestionService.getSuggestedQuestionAnswers(7));
     }
 
     /**

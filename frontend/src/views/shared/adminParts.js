@@ -1,4 +1,5 @@
 import { h } from 'vue'
+import { apiForm } from '../../js/adminApi'
 
 export const navItems = [
   { key: 'knowledge', label: '知识库管理', href: '/admin/knowledge', icon: DatabaseIcon },
@@ -26,16 +27,59 @@ export function AdminSidebar(props) {
 AdminSidebar.props = ['active']
 
 export function AdminTopbar(props) {
+  const userInfo = getStoredUserInfo()
+  const displayName = userInfo?.realName || userInfo?.username || '未登录用户'
+  const account = userInfo?.username ? `账号：${userInfo.username}` : '账号：-'
+  const avatarText = (displayName || 'U').trim().slice(0, 1).toUpperCase()
+
   return h('header', { class: 'admin-topbar' }, [
     h('div', [h('h2', props.title), h('p', { class: 'admin-subtitle' }, '管理员视图')]),
     h('div', { class: 'admin-user' }, [
-      h('div', [h('div', '管理员'), h('div', 'admin@neusoft.edu')]),
-      h('div', { class: 'avatar' }, 'A')
+      h('div', { class: 'admin-user-meta' }, [h('div', displayName), h('div', account)]),
+      h('button', {
+        class: 'avatar avatar-button',
+        type: 'button',
+        title: '退出账号',
+        onClick: confirmAdminLogout
+      }, avatarText)
     ])
   ])
 }
 
 AdminTopbar.props = ['title']
+
+function getStoredUserInfo() {
+  const raw = localStorage.getItem('user_info') || sessionStorage.getItem('user_info')
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function confirmAdminLogout() {
+  if (window.confirm('确定要退出当前账号吗？')) {
+    handleAdminLogout()
+  }
+}
+
+async function handleAdminLogout() {
+  try {
+    await apiForm('/api/auth/logout')
+  } catch {
+    // Local cleanup should still happen even if the backend session endpoint is unavailable.
+  }
+  localStorage.removeItem('token')
+  localStorage.removeItem('jwt')
+  localStorage.removeItem('user_info')
+  localStorage.removeItem('user_role')
+  sessionStorage.removeItem('token')
+  sessionStorage.removeItem('jwt')
+  sessionStorage.removeItem('user_info')
+  sessionStorage.removeItem('user_role')
+  window.location.href = '/'
+}
 
 function svg(paths, attrs = {}) {
   return h('svg', { viewBox: '0 0 24 24', class: 'icon', ...attrs }, paths.map(path => h('path', path)))

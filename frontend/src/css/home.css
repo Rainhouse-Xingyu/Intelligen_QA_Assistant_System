@@ -46,6 +46,26 @@
   cursor: pointer;
   padding-bottom: 10px;
 }
+.survey-nav-item {
+  padding-right: 10px;
+}
+.survey-sidebar-btn {
+  position: relative;
+}
+.survey-alert-dot {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e53e3e;
+  box-shadow: 0 0 0 2px #fff, 0 2px 8px rgba(229, 62, 62, 0.35);
+}
+.survey-sidebar-btn .survey-alert-dot {
+  top: 8px;
+  right: 12px;
+}
 .arrow {
   display: inline-block;
   transform: rotate(180deg);

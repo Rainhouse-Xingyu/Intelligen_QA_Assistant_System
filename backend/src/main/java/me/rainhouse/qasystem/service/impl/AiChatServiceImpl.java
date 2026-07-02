@@ -96,6 +96,8 @@ public class AiChatServiceImpl implements AiChatService {
                 answerSource = "RAG";
             } else {
                 unrecognizedQueryService.recordUnrecognized(userId, query, moduleType, searchResponse.topScore());
+                answer = "暂时没有找到和这个问题匹配的答案，我已经记录下来，后续会继续完善知识库。你也可以换一种说法再问我一次。";
+                answerSource = "NO_ANSWER_FALLBACK";
             }
         }
 

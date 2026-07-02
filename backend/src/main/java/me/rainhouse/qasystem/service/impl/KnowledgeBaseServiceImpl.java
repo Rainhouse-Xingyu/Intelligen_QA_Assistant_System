@@ -9,6 +9,7 @@ import me.rainhouse.qasystem.entity.KbDocument;
 import me.rainhouse.qasystem.entity.KbQaSourceRef;
 import me.rainhouse.qasystem.entity.KbQaEntry;
 import me.rainhouse.qasystem.entity.KbSourceReference;
+import me.rainhouse.qasystem.entity.StatHotQuestion;
 import me.rainhouse.qasystem.mapper.KbAnswerTemplateMapper;
 import me.rainhouse.qasystem.mapper.KbCategoryMapper;
 import me.rainhouse.qasystem.mapper.KbDocumentMapper;
@@ -16,6 +17,7 @@ import me.rainhouse.qasystem.mapper.KbQaSourceRefMapper;
 import me.rainhouse.qasystem.mapper.KbSourceReferenceMapper;
 import me.rainhouse.qasystem.service.KbQaEntryService;
 import me.rainhouse.qasystem.service.KnowledgeBaseService;
+import me.rainhouse.qasystem.service.StatHotQuestionService;
 import me.rainhouse.qasystem.service.VectorSearchService;
 import me.rainhouse.qasystem.service.kb.DataCleanService;
 import me.rainhouse.qasystem.service.kb.DocumentParserUtil;
@@ -35,6 +37,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +51,7 @@ import java.util.regex.Pattern;
 public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocument> implements KnowledgeBaseService {
 
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s，。；;）)】\\]>]+");
+    private static final String COMMON_QUESTION_SOURCE_TYPE = "common_question";
 
     @Value("${knowledge.upload-dir:uploads/kb}")
     private String uploadDir;
@@ -78,6 +82,9 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
 
     @Autowired
     private StructuredFaqExcelParser structuredFaqExcelParser;
+
+    @Autowired
+    private StatHotQuestionService statHotQuestionService;
 
     @Autowired
     private VectorSearchService vectorSearchService;
@@ -141,6 +148,70 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             return document;
         } catch (Exception e) {
             log.error("知识库文档导入失败: documentId={}, file={}", document.getId(), document.getFileName(), e);
+            document.setProcessStatus(3);
+            document.setProcessMessage(limitMessage(e.getMessage()));
+            this.updateById(document);
+            return document;
+        }
+    }
+
+    @Override
+    public KbDocument importCommonQuestions(MultipartFile file, String uploaderId, String moduleType) {
+        validateFile(file);
+
+        KbDocument document = new KbDocument();
+        document.setFileName(file.getOriginalFilename());
+        document.setUploaderId(uploaderId);
+        document.setProcessStatus(1);
+        document.setProcessMessage("文件已上传，正在导入常见问题");
+        document.setCreatedAt(LocalDateTime.now());
+        this.save(document);
+
+        try {
+            String storedPath = storeFile(file, document.getId());
+            document.setFileUrl(storedPath);
+            this.updateById(document);
+
+            Path storedFilePath = resolveStoredPath(storedPath);
+            List<FaqItem> faqItems = readFaqItemsForCommonQuestions(document, storedFilePath, moduleType);
+            if (faqItems.isEmpty()) {
+                document.setProcessStatus(3);
+                document.setProcessMessage("未能从文件中提取到可导入的常见问题");
+                this.updateById(document);
+                return document;
+            }
+
+            List<KbQaEntry> entries = knowledgeChunker.chunk(
+                    faqItems,
+                    document.getId(),
+                    uploaderId,
+                    normalizeModuleType(moduleType),
+                    COMMON_QUESTION_SOURCE_TYPE
+            );
+            entries.forEach(entry -> normalizeEntryForDocumentCategory(entry, moduleType));
+
+            if (entries.isEmpty()) {
+                document.setProcessStatus(3);
+                document.setProcessMessage("未能从文件中提取到可导入的常见问题");
+                this.updateById(document);
+                return document;
+            }
+
+            kbQaEntryService.saveBatch(entries);
+            entries.forEach(this::syncSourceReferences);
+            vectorSearchService.upsertEntries(entries);
+
+            List<StatHotQuestion> stats = buildCommonQuestionStats(faqItems, moduleType);
+            if (!stats.isEmpty()) {
+                statHotQuestionService.saveBatch(stats);
+            }
+            document.setProcessStatus(2);
+            document.setProcessMessage("常见问题导入成功，已生成 " + entries.size() + " 条问答词条，写入 " + stats.size() + " 条常见问题");
+            this.updateById(document);
+            log.info("常见问题导入成功: documentId={}, entries={}, stats={}", document.getId(), entries.size(), stats.size());
+            return document;
+        } catch (Exception e) {
+            log.error("常见问题导入失败 documentId={}, file={}", document.getId(), document.getFileName(), e);
             document.setProcessStatus(3);
             document.setProcessMessage(limitMessage(e.getMessage()));
             this.updateById(document);
@@ -465,6 +536,62 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         kbQaEntryService.saveBatch(entries);
         entries.forEach(this::syncSourceReferences);
         return entries;
+    }
+
+    private List<FaqItem> readFaqItemsForCommonQuestions(KbDocument document, Path storedFilePath, String moduleType) {
+        if (structuredFaqExcelParser.supports(document.getFileName())) {
+            List<StructuredFaqItem> structuredItems = structuredFaqExcelParser.parse(storedFilePath);
+            if (!structuredItems.isEmpty()) {
+                return structuredItems.stream()
+                        .map(item -> new FaqItem(
+                                item.categoryL1(),
+                                item.categoryL2(),
+                                item.categoryL3(),
+                                item.question(),
+                                item.answer()
+                        ))
+                        .toList();
+            }
+        }
+
+        ParsedDocument parsedDocument = documentParserUtil.parse(storedFilePath, document.getFileName());
+        List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName(), categoryPathOptions());
+        return knowledgeChunker.chunk(
+                        faqItems,
+                        document.getId(),
+                        document.getUploaderId(),
+                        normalizeModuleType(moduleType),
+                        parsedDocument.sourceType()
+                )
+                .stream()
+                .map(entry -> new FaqItem(
+                        entry.getCategoryL1Name(),
+                        entry.getCategoryL2Name(),
+                        entry.getCategoryL3Name(),
+                        entry.getQuestion(),
+                        entry.getAnswer()
+                ))
+                .toList();
+    }
+
+    private List<StatHotQuestion> buildCommonQuestionStats(List<FaqItem> items, String moduleType) {
+        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
+        String fallbackModule = normalizeModuleType(moduleType);
+        return items.stream()
+                .filter(item -> StringUtils.hasText(item.question()) && StringUtils.hasText(item.answer()))
+                .map(item -> {
+                    StatHotQuestion stat = new StatHotQuestion();
+                    String question = item.question().trim();
+                    stat.setQuestionText(question.length() > 500 ? question.substring(0, 500) : question);
+                    stat.setAnswerText(item.answer().trim());
+                    stat.setModuleType(StringUtils.hasText(item.categoryL1()) ? item.categoryL1().trim() : fallbackModule);
+                    stat.setFrequency(1);
+                    stat.setLastHitTime(now);
+                    stat.setStatDate(today);
+                    return stat;
+                })
+                .toList();
     }
 
     private void normalizeEntryForDocumentCategory(KbQaEntry entry, String moduleType) {

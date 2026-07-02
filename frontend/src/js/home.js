@@ -19,8 +19,10 @@ export default {
     // --- Login state ---
     const isLoggedIn = ref(false)
     const userInfo = ref(null)
+    const pendingSurveyCount = ref(0)
 
     const isStudent = computed(() => userInfo.value?.role === 1)
+    const hasPendingSurvey = computed(() => isLoggedIn.value && isStudent.value && pendingSurveyCount.value > 0)
 
     const parseRgb = (value) => {
       const match = value?.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([.\d]+))?\)/)
@@ -120,6 +122,20 @@ export default {
       return localStorage.getItem('token') || sessionStorage.getItem('token') || ''
     }
 
+    const loadSurveyStatus = async () => {
+      pendingSurveyCount.value = 0
+      if (!isLoggedIn.value || !isStudent.value) return
+
+      try {
+        const surveys = await apiGet('/api/survey/student/list')
+        pendingSurveyCount.value = Array.isArray(surveys)
+          ? surveys.filter(item => item && item.submitted !== true).length
+          : 0
+      } catch {
+        pendingSurveyCount.value = 0
+      }
+    }
+
     const restoreSession = async () => {
       const token = getToken()
       if (!token) return
@@ -128,6 +144,7 @@ export default {
         userInfo.value = await apiGet('/api/auth/info')
         isLoggedIn.value = true
         loadConversations()
+        await loadSurveyStatus()
       } catch {
         clearAuth()
       }
@@ -140,6 +157,7 @@ export default {
       sessionStorage.removeItem('user_info')
       isLoggedIn.value = false
       userInfo.value = null
+      pendingSurveyCount.value = 0
     }
 
     const handleLogout = async () => {
@@ -168,6 +186,7 @@ export default {
         emit('navigate-login')
         return
       }
+      if (!isStudent.value) return
       emit('navigate-survey')
     }
 
@@ -238,6 +257,8 @@ export default {
       isLoggedIn,
       userInfo,
       isStudent,
+      pendingSurveyCount,
+      hasPendingSurvey,
       conversations,
       handleSendFromHome,
       handleLoginClick,

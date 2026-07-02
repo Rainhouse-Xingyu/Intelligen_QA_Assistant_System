@@ -124,16 +124,43 @@
   font-weight: 800;
 }
 
+.admin-user-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-user-meta div:first-child {
+  color: #173875;
+}
+
+.admin-user-meta div:last-child {
+  color: #315dbc;
+  font-size: 14px;
+}
+
 .avatar {
   width: 52px;
   height: 52px;
   border-radius: 50%;
+  border: 0;
   background: #315dbc;
   color: #fff;
   display: grid;
   place-items: center;
   font-size: 22px;
   box-shadow: 0 6px 14px rgba(27, 62, 139, 0.3);
+}
+
+.avatar-button {
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.avatar-button:hover {
+  background: #244d9e;
+  box-shadow: 0 8px 18px rgba(27, 62, 139, 0.36);
+  transform: translateY(-1px);
 }
 
 .admin-content {

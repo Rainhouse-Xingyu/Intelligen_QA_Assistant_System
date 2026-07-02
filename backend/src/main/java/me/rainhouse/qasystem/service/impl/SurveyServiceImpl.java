@@ -267,9 +267,10 @@ public class SurveyServiceImpl implements SurveyService {
         try (InputStream inputStream = file.getInputStream();
              Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
+            List<String> fallbackQuestions = readRowQuestions(sheet);
             Row header = sheet.getRow(sheet.getFirstRowNum());
             if (header == null) {
-                return List.of();
+                return fallbackQuestions;
             }
             List<String> questions = new ArrayList<>();
             short lastCellNum = header.getLastCellNum();
@@ -281,10 +282,70 @@ public class SurveyServiceImpl implements SurveyService {
                     questions.add(text);
                 }
             }
-            return questions;
+            return questions.isEmpty() ? fallbackQuestions : questions;
         } catch (Exception e) {
             throw new IllegalArgumentException("问卷模板解析失败: " + e.getMessage(), e);
         }
+    }
+
+    private List<String> readRowQuestions(Sheet sheet) {
+        if (sheet == null) {
+            return List.of();
+        }
+        Map<String, String> uniqueQuestions = new LinkedHashMap<>();
+        for (int rowIndex = sheet.getFirstRowNum(); rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            String bestQuestion = "";
+            for (int cellIndex = row.getFirstCellNum(); cellIndex < row.getLastCellNum(); cellIndex++) {
+                if (cellIndex < 0) {
+                    continue;
+                }
+                Cell cell = row.getCell(cellIndex);
+                String rawText = cell == null ? "" : dataFormatter.formatCellValue(cell);
+                String text = cleanQuestionText(rawText);
+                if (isQuestionCandidate(text) && text.length() > bestQuestion.length()) {
+                    bestQuestion = text;
+                }
+            }
+            if (StringUtils.hasText(bestQuestion)) {
+                uniqueQuestions.putIfAbsent(bestQuestion, bestQuestion);
+            }
+        }
+        return new ArrayList<>(uniqueQuestions.values());
+    }
+
+    private boolean isQuestionCandidate(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        String normalized = text.trim();
+        if (normalized.length() < 4 || normalized.length() > 1000) {
+            return false;
+        }
+        if (normalized.matches("^\\d+(\\.0)?$")) {
+            return false;
+        }
+        String lower = normalized.toLowerCase();
+        if (lower.matches("^(id|no|name|username|student|class|phone|time|score|submit)$")) {
+            return false;
+        }
+        return !isScaleOptionText(normalized);
+    }
+
+    private boolean isScaleOptionText(String text) {
+        return "完全符合".equals(text)
+                || "比较符合".equals(text)
+                || "一般符合".equals(text)
+                || "比较不符合".equals(text)
+                || "不符合".equals(text)
+                || "非常满意".equals(text)
+                || "满意".equals(text)
+                || "一般".equals(text)
+                || "不满意".equals(text)
+                || "非常不满意".equals(text);
     }
 
     private String cleanQuestionText(String text) {

@@ -12,6 +12,16 @@
               <UploadIcon />
               上传文档
             </h3>
+            <div class="upload-mode-row">
+              <button
+                type="button"
+                :class="['mode-toggle', { active: commonQuestionMode }]"
+                @click="commonQuestionMode = !commonQuestionMode"
+              >
+                常见问题
+              </button>
+              <span>{{ commonQuestionMode ? '本次上传将写入常见问题和问答词条' : '未选择时按原知识库流程保存' }}</span>
+            </div>
             <label class="drop-zone" @drop.prevent="onDrop" @dragover.prevent>
               <input ref="fileInput" type="file" hidden @change="onFileChange" />
               <UploadIcon class="big-upload" />
@@ -98,6 +108,7 @@
               <option value="">全部来源</option>
               <option value="manual">manual</option>
               <option value="document">document</option>
+              <option value="common_question">常见问题</option>
             </select>
           </div>
 
@@ -128,7 +139,7 @@
                 <p>答：{{ entry.answer }}</p>
                 <div class="tags">
                   <span class="tag blue">{{ entry.moduleType || '未分类' }}</span>
-                  <span class="tag blue">{{ entry.sourceType || 'manual' }}</span>
+                  <span :class="['tag', entry.sourceType === 'common_question' ? 'yellow' : 'blue']">{{ sourceTypeText(entry.sourceType) }}</span>
                   <span :class="['tag', entry.status === 1 ? 'green' : 'red']">{{ entry.status === 1 ? '启用' : '禁用' }}</span>
                 </div>
               </div>
@@ -169,6 +180,7 @@
             <select v-model="form.sourceType" class="select">
               <option value="manual">manual</option>
               <option value="document">document</option>
+              <option value="common_question">常见问题</option>
             </select>
           </label>
         </div>
@@ -193,6 +205,7 @@ const documents = ref([])
 const selectedFile = ref(null)
 const fileInput = ref(null)
 const uploadModule = ref('考务通知')
+const commonQuestionMode = ref(false)
 const uploading = ref(false)
 const saving = ref(false)
 const batchDeleting = ref(false)
@@ -257,6 +270,7 @@ async function uploadDocument() {
     const data = new FormData()
     data.append('file', selectedFile.value)
     data.append('moduleType', uploadModule.value)
+    data.append('commonQuestion', commonQuestionMode.value ? 'true' : 'false')
     await apiUpload('/api/kb/upload', data)
     selectedFile.value = null
     await Promise.all([loadDocuments(), loadEntries()])
@@ -389,6 +403,15 @@ function statusClass(status) {
   return status === 2 ? 'green' : status === 3 ? 'red' : 'yellow'
 }
 
+function sourceTypeText(sourceType) {
+  return ({
+    common_question: '常见问题',
+    manual: 'manual',
+    document: 'document',
+    Excel: 'Excel'
+  })[sourceType] || sourceType || 'manual'
+}
+
 function formatTime(value) {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
@@ -418,6 +441,42 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.upload-mode-row {
+  min-height: 42px;
+  border: 1px solid #d8e4f5;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0 12px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-mode-row span {
+  color: #49659c;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.mode-toggle {
+  min-height: 30px;
+  border: 1px solid #d8e4f5;
+  border-radius: 9px;
+  background: #fff;
+  color: #173875;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mode-toggle.active {
+  border-color: #8ee7bd;
+  background: #eafff3;
+  color: #1aa56a;
 }
 
 .drop-zone {

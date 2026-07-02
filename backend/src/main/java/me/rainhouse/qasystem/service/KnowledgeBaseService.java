@@ -11,6 +11,8 @@ public interface KnowledgeBaseService extends IService<KbDocument> {
 
     KbDocument importDocument(MultipartFile file, String uploaderId, String moduleType);
 
+    KbDocument importCommonQuestions(MultipartFile file, String uploaderId, String moduleType);
+
     KbDocument reprocessDocument(Long documentId, String operatorId, String moduleType);
 
     List<KbDocument> listDocuments(Integer processStatus);

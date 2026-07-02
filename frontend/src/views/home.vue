@@ -32,7 +32,6 @@
          </div>
       </div>
       <div class="nav-actions">
-        <div class="nav-item" @click="handleSurveyClick">问卷调查</div>
         <div class="nav-item" @click="handleLoginClick">
           {{ isLoggedIn ? (userInfo.realName || userInfo.username) + ' | 退出' : '登录' }}
         </div>
@@ -60,7 +59,11 @@
           </svg>
           新对话
         </button>
-        <button class="btn ghost" @click="handleSurveyClick">
+        <button
+          :class="['btn', 'ghost', 'survey-sidebar-btn', { 'has-alert': hasPendingSurvey }]"
+          :title="hasPendingSurvey ? `还有 ${pendingSurveyCount} 份问卷未完成` : '问卷调查'"
+          @click="handleSurveyClick"
+        >
           <svg viewBox="0 0 24 24" class="icon">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <path d="M14 2v6h6"></path>
@@ -68,6 +71,7 @@
             <path d="M9 17h6"></path>
           </svg>
           问卷调查
+          <span v-if="hasPendingSurvey" class="survey-alert-dot"></span>
         </button>
         <nav class="admin-nav">
           <a
