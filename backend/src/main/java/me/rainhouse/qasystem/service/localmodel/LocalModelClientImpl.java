@@ -81,6 +81,8 @@ public class LocalModelClientImpl implements LocalModelClient {
                 item.put("knowledgeId", reference.knowledgeId());
                 item.put("question", reference.question());
                 item.put("answer", reference.answer());
+                item.put("categoryPath", reference.categoryPath());
+                item.put("sourceUrl", reference.sourceUrl());
                 item.put("score", reference.finalScore());
                 refPayload.add(item);
             }

@@ -17,7 +17,13 @@ public interface KnowledgeBaseService extends IService<KbDocument> {
 
     int deleteDocuments(List<Long> ids);
 
-    List<KbQaEntry> listEntries(String keyword, String moduleType, Integer status, String sourceType);
+    List<KbQaEntry> listEntries(String keyword,
+                                String moduleType,
+                                Integer status,
+                                String sourceType,
+                                String categoryL1,
+                                String categoryL2,
+                                String categoryL3);
 
     KbQaEntry createEntry(KbQaEntry entry, String operatorId);
 

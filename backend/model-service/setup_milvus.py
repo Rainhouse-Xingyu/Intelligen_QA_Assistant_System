@@ -1,13 +1,16 @@
 """Initialize the Milvus collection used by the QA system.
 
-This script creates ``knowledge_vector`` with the same layout as the Attu
-export in ``knowledge_vector.json``:
+This script creates ``knowledge_vector_v2`` with the layout used by the
+three-level FAQ knowledge-base design:
 
 - id: Int64 primary key, auto_id disabled
 - embedding: FloatVector(768), AUTOINDEX, COSINE
 - module_type: VarChar(50)
 - question: VarChar(1000), AUTOINDEX
 - knowledge_id: Int64, AUTOINDEX
+- category_l1_id/category_l2_id/category_l3_id: Int64, AUTOINDEX
+- category_path: VarChar(300)
+- status: Int64, AUTOINDEX
 
 If an incompatible empty collection already exists, it is recreated. If the
 collection contains data, set RESET_MILVUS_COLLECTION=true to force recreation.
@@ -26,7 +29,7 @@ from pymilvus import (
 )
 
 
-COLLECTION_NAME = "knowledge_vector"
+COLLECTION_NAME = os.getenv("MILVUS_COLLECTION_NAME", "knowledge_vector_v2")
 VECTOR_DIM = 768
 RESET_ENV = "RESET_MILVUS_COLLECTION"
 
@@ -37,6 +40,11 @@ EXPECTED_FIELDS: Tuple[Tuple[str, DataType, Dict[str, object], bool], ...] = (
     ("module_type", DataType.VARCHAR, {"max_length": 50}, False),
     ("question", DataType.VARCHAR, {"max_length": 1000}, False),
     ("knowledge_id", DataType.INT64, {}, False),
+    ("category_l1_id", DataType.INT64, {}, False),
+    ("category_l2_id", DataType.INT64, {}, False),
+    ("category_l3_id", DataType.INT64, {}, False),
+    ("category_path", DataType.VARCHAR, {"max_length": 300}, False),
+    ("status", DataType.INT64, {}, False),
 )
 
 EXPECTED_INDEXES: Dict[str, Dict[str, object]] = {
@@ -46,6 +54,10 @@ EXPECTED_INDEXES: Dict[str, Dict[str, object]] = {
     },
     "question": {"index_type": "AUTOINDEX"},
     "knowledge_id": {"index_type": "AUTOINDEX"},
+    "category_l1_id": {"index_type": "AUTOINDEX"},
+    "category_l2_id": {"index_type": "AUTOINDEX"},
+    "category_l3_id": {"index_type": "AUTOINDEX"},
+    "status": {"index_type": "AUTOINDEX"},
 }
 
 
@@ -106,6 +118,11 @@ def create_collection() -> Collection:
         FieldSchema(name="module_type", dtype=DataType.VARCHAR, max_length=50),
         FieldSchema(name="question", dtype=DataType.VARCHAR, max_length=1000),
         FieldSchema(name="knowledge_id", dtype=DataType.INT64),
+        FieldSchema(name="category_l1_id", dtype=DataType.INT64),
+        FieldSchema(name="category_l2_id", dtype=DataType.INT64),
+        FieldSchema(name="category_l3_id", dtype=DataType.INT64),
+        FieldSchema(name="category_path", dtype=DataType.VARCHAR, max_length=300),
+        FieldSchema(name="status", dtype=DataType.INT64),
     ]
     schema = CollectionSchema(
         fields=fields,
@@ -123,6 +140,10 @@ def create_collection() -> Collection:
     collection.create_index("embedding", EXPECTED_INDEXES["embedding"], index_name="embedding")
     collection.create_index("question", EXPECTED_INDEXES["question"], index_name="question")
     collection.create_index("knowledge_id", EXPECTED_INDEXES["knowledge_id"], index_name="knowledge_id")
+    collection.create_index("category_l1_id", EXPECTED_INDEXES["category_l1_id"], index_name="category_l1_id")
+    collection.create_index("category_l2_id", EXPECTED_INDEXES["category_l2_id"], index_name="category_l2_id")
+    collection.create_index("category_l3_id", EXPECTED_INDEXES["category_l3_id"], index_name="category_l3_id")
+    collection.create_index("status", EXPECTED_INDEXES["status"], index_name="status")
     collection.load()
     return collection
 

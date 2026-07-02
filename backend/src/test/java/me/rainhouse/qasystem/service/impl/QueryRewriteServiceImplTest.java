@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,6 +33,29 @@ class QueryRewriteServiceImplTest {
         assertTrue(rewritten.contains("选课"));
         assertTrue(rewritten.contains("办理流程") || rewritten.contains("操作流程"));
         assertTrue(rewritten.endsWith("？"));
+    }
+
+    @Test
+    void casualPhraseBypassesLocalModelRewrite() {
+        QueryRewriteServiceImpl service = new QueryRewriteServiceImpl(new AiModelProperties(), new ThrowingEnabledLocalModelClient());
+
+        String rewritten = service.rewrite("你好");
+
+        assertEquals("你好", rewritten);
+    }
+
+    @Test
+    void rejectsLocalModelRewriteWhenTopicDrifts() {
+        QueryRewriteServiceImpl service = new QueryRewriteServiceImpl(
+                new AiModelProperties(),
+                new FixedRewriteLocalModelClient("选课的开放时间、操作流程和退补选规则是什么？")
+        );
+
+        String rewritten = service.rewrite("我想问问线上考试有什么要求");
+
+        assertTrue(rewritten.contains("线上考试") || rewritten.contains("考试"));
+        assertTrue(rewritten.contains("要求") || rewritten.contains("注意事项"));
+        assertTrue(!rewritten.contains("选课"));
     }
 
     private static class DisabledLocalModelClient implements LocalModelClient {
@@ -63,6 +87,36 @@ class QueryRewriteServiceImplTest {
         @Override
         public boolean enabled() {
             return false;
+        }
+    }
+
+    private static class ThrowingEnabledLocalModelClient extends DisabledLocalModelClient {
+        @Override
+        public String rewrite(String query) {
+            throw new AssertionError("casual phrases should not call local model rewrite");
+        }
+
+        @Override
+        public boolean enabled() {
+            return true;
+        }
+    }
+
+    private static class FixedRewriteLocalModelClient extends DisabledLocalModelClient {
+        private final String rewritten;
+
+        private FixedRewriteLocalModelClient(String rewritten) {
+            this.rewritten = rewritten;
+        }
+
+        @Override
+        public String rewrite(String query) {
+            return rewritten;
+        }
+
+        @Override
+        public boolean enabled() {
+            return true;
         }
     }
 }

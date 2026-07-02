@@ -89,8 +89,19 @@ public class KnowledgeBaseController {
     public Result<List<KbQaEntry>> listEntries(@RequestParam(value = "keyword", required = false) String keyword,
                                                @RequestParam(value = "moduleType", required = false) String moduleType,
                                                @RequestParam(value = "status", required = false) Integer status,
-                                               @RequestParam(value = "sourceType", required = false) String sourceType) {
-        return Result.success(knowledgeBaseService.listEntries(keyword, moduleType, status, sourceType));
+                                               @RequestParam(value = "sourceType", required = false) String sourceType,
+                                               @RequestParam(value = "categoryL1", required = false) String categoryL1,
+                                               @RequestParam(value = "categoryL2", required = false) String categoryL2,
+                                               @RequestParam(value = "categoryL3", required = false) String categoryL3) {
+        return Result.success(knowledgeBaseService.listEntries(
+                keyword,
+                moduleType,
+                status,
+                sourceType,
+                categoryL1,
+                categoryL2,
+                categoryL3
+        ));
     }
 
     /**
