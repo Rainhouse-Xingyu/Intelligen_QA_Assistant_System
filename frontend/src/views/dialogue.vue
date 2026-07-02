@@ -19,9 +19,40 @@
            <div class="msg-avatar">✨</div>
            <div class="msg-bubble">你好，我是你的智能助手 ✨<br/>有什么想聊的，随时告诉我。</div>
          </div>
+         <div v-if="suggestedQuestions.length" class="message bot-message">
+           <div class="msg-avatar">✨</div>
+           <div class="msg-bubble faq-bubble">
+             <div class="faq-title">常见问题</div>
+             <div class="faq-list">
+               <button
+                 v-for="(item, index) in suggestedQuestions"
+                 :key="item.id || item.questionText || index"
+                 class="faq-item"
+                 @click="handleSuggestedQuestion(item)"
+               >
+                 <span class="faq-index">{{ index + 1 }}</span>
+                 <span>{{ item.questionText }}</span>
+               </button>
+             </div>
+           </div>
+         </div>
          <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.type === 'user' ? 'user-message' : 'bot-message']">
             <div v-if="msg.type === 'bot'" class="msg-avatar">✨</div>
-            <div class="msg-bubble" v-html="formatContent(msg.content)"></div>
+            <div v-if="msg.kind === 'faq'" class="msg-bubble faq-bubble">
+              <div class="faq-title">常见问题</div>
+              <div class="faq-list">
+                <button
+                  v-for="(item, faqIndex) in msg.items"
+                  :key="item.id || item.questionText || faqIndex"
+                  class="faq-item"
+                  @click="handleSuggestedQuestion(item)"
+                >
+                  <span class="faq-index">{{ faqIndex + 1 }}</span>
+                  <span>{{ item.questionText }}</span>
+                </button>
+              </div>
+            </div>
+            <div v-else class="msg-bubble" v-html="formatContent(msg.content)"></div>
          </div>
          
          <!-- Loading indicator -->

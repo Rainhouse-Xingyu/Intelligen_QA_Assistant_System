@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -82,6 +83,62 @@ public class StatHotQuestionServiceImpl extends ServiceImpl<StatHotQuestionMappe
           .last("LIMIT " + safeLimit(limit));
           
         return this.listMaps(qw);
+    }
+
+    @Override
+    public List<Map<String, Object>> getSuggestedQuestionAnswers(int limit) {
+        int safeLimit = safeLimit(limit);
+        List<Map<String, Object>> rows = listLatestCommonQuestionEntries(safeLimit);
+        if (rows.isEmpty()) {
+            rows = listLatestStatQuestionAnswers(safeLimit);
+        }
+
+        Map<String, Map<String, Object>> uniqueRows = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            String question = text(row.get("questionText"));
+            String answer = text(row.get("answerText"));
+            if (question == null || question.isBlank() || answer == null || answer.isBlank()) {
+                continue;
+            }
+            uniqueRows.putIfAbsent(question.trim() + "\n" + answer.trim(), row);
+        }
+
+        return uniqueRows.values().stream()
+                .limit(safeLimit)
+                .toList();
+    }
+
+    private List<Map<String, Object>> listLatestStatQuestionAnswers(int limit) {
+        QueryWrapper<StatHotQuestion> qw = new QueryWrapper<>();
+        qw.select("id",
+                  "question_text as questionText",
+                  "answer_text as answerText",
+                  "module_type as moduleType",
+                  "frequency as value",
+                  "last_hit_time as lastHitTime")
+          .isNotNull("answer_text")
+          .ne("answer_text", "")
+          .orderByDesc("id")
+          .last("LIMIT " + limit);
+
+        return this.listMaps(qw);
+    }
+
+    private List<Map<String, Object>> listLatestCommonQuestionEntries(int limit) {
+        QueryWrapper<KbQaEntry> qw = new QueryWrapper<>();
+        qw.select("id",
+                  "question as questionText",
+                  "answer as answerText",
+                  "module_type as moduleType",
+                  "updated_at as lastHitTime")
+          .eq("source_type", "common_question")
+          .eq("status", 1)
+          .isNotNull("answer")
+          .ne("answer", "")
+          .orderByDesc("id")
+          .last("LIMIT " + limit);
+
+        return kbQaEntryMapper.selectMaps(qw);
     }
 
     @Override

@@ -48,7 +48,7 @@
               </div>
 
               <div v-if="question.questionType === 1" class="scale-options">
-                <label v-for="option in scaleOptions" :key="option.value" :class="{ selected: answers[question.id] === option.value }">
+                <label v-for="option in getQuestionOptions(question)" :key="option.value" :class="{ selected: answers[question.id] === option.value }">
                   <input
                     v-model.number="answers[question.id]"
                     type="radio"
@@ -89,7 +89,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { apiGet, apiJson } from '../js/adminApi'
 
-defineEmits(['go-home', 'navigate-login'])
+const emit = defineEmits(['go-home', 'navigate-login'])
 
 const scaleOptions = [
   { value: 1, label: '完全符合' },
@@ -98,6 +98,22 @@ const scaleOptions = [
   { value: 4, label: '比较不符合' },
   { value: 5, label: '不符合' }
 ]
+
+const supportFrequencyOptions = [
+  { value: 1, label: '每月1次' },
+  { value: 2, label: '每两周1次' },
+  { value: 3, label: '每周1次' },
+  { value: 4, label: '每周2次' },
+  { value: 5, label: '不需要对我进行帮扶' }
+]
+
+function getQuestionOptions(question) {
+  const text = question?.questionText || ''
+  if (text.includes('帮扶频率')) {
+    return supportFrequencyOptions
+  }
+  return scaleOptions
+}
 
 const surveys = ref([])
 const selectedId = ref(null)
@@ -152,6 +168,7 @@ async function submitSurvey() {
     await apiJson(`/api/survey/student/${current.value.survey.id}/submit`, payload)
     await loadSurveys()
     selectedId.value = current.value?.survey?.id || selectedId.value
+    emit('go-home')
   } catch (e) {
     errorMessage.value = e.message || '提交失败'
   } finally {
@@ -394,6 +411,8 @@ onMounted(loadSurveys)
   place-items: center;
   align-content: center;
   gap: 4px;
+  padding: 8px;
+  text-align: center;
   cursor: pointer;
   font-weight: 900;
 }
@@ -415,6 +434,8 @@ onMounted(loadSurveys)
 
 .scale-options span {
   font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .text-answer {

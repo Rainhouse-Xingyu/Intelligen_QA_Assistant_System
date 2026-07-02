@@ -5,7 +5,38 @@
     <main class="admin-main">
       <AdminTopbar title="问卷调查" />
 
-      <section class="survey-grid">
+      <section v-if="selectedSubmission" class="submission-detail-page">
+        <div class="admin-card submission-detail-card">
+          <div class="answer-head">
+            <div>
+              <button class="btn ghost" type="button" @click="backToSurveyDetail">返回问卷详情</button>
+              <h2>{{ selectedSubmission.realName || selectedSubmission.username || '学生' }} 的回答详情</h2>
+              <p>
+                账号：{{ selectedSubmission.username || selectedSubmission.userId }}
+                · 提交时间：{{ formatTime(selectedSubmission.submitTime) }}
+              </p>
+            </div>
+            <span class="status-pill done">已提交</span>
+          </div>
+
+          <div class="admin-answer-list">
+            <article
+              v-for="answer in selectedSubmission.answers"
+              :key="answer.questionId"
+              class="admin-answer-item"
+            >
+              <div class="question-title">
+                <b>{{ answer.questionNo }}</b>
+                <span>{{ answer.questionText }}</span>
+                <em>{{ answer.questionType === 2 ? '文本题' : '选择题' }}</em>
+              </div>
+              <div class="admin-answer-value">{{ formatAnswerValue(answer) }}</div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section v-else class="survey-grid">
         <div class="left-column">
           <div class="admin-card">
             <h3 class="section-title">
@@ -31,7 +62,7 @@
             </button>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card survey-list-card">
             <h3 class="section-title">
               <FileIcon />
               问卷列表
@@ -99,6 +130,7 @@
                     <th>账号</th>
                     <th>提交时间</th>
                     <th>答案数</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -107,6 +139,9 @@
                     <td>{{ item.username || item.userId }}</td>
                     <td>{{ formatTime(item.submitTime) }}</td>
                     <td>{{ item.answers?.length || 0 }}</td>
+                    <td>
+                      <button class="btn text detail-link" type="button" @click="selectSubmission(item)">回答详情</button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -128,6 +163,7 @@ import { AdminSidebar, AdminTopbar, CheckIcon, FileIcon, UploadIcon } from './sh
 const surveys = ref([])
 const detail = ref(null)
 const submissions = ref([])
+const selectedSubmission = ref(null)
 const selectedId = ref(null)
 const selectedFile = ref(null)
 const fileInput = ref(null)
@@ -148,6 +184,7 @@ async function loadSurveys() {
 
 async function selectSurvey(id) {
   selectedId.value = id
+  selectedSubmission.value = null
   detail.value = await apiGet(`/api/survey/admin/${id}`)
   await loadSubmissions()
 }
@@ -155,6 +192,17 @@ async function selectSurvey(id) {
 async function loadSubmissions() {
   if (!selectedId.value) return
   submissions.value = await apiGet(`/api/survey/admin/${selectedId.value}/submissions`)
+  if (selectedSubmission.value && !submissions.value.some(item => item.id === selectedSubmission.value.id)) {
+    selectedSubmission.value = null
+  }
+}
+
+function selectSubmission(item) {
+  selectedSubmission.value = item
+}
+
+function backToSurveyDetail() {
+  selectedSubmission.value = null
 }
 
 function onFileChange(event) {
@@ -227,6 +275,34 @@ function statusClass(status) {
   return 'yellow'
 }
 
+const scaleAnswerLabels = {
+  1: '完全符合',
+  2: '比较符合',
+  3: '一般符合',
+  4: '比较不符合',
+  5: '不符合'
+}
+
+const supportFrequencyLabels = {
+  1: '每月1次',
+  2: '每两周1次',
+  3: '每周1次',
+  4: '每周2次',
+  5: '不需要对我进行帮扶'
+}
+
+function formatAnswerValue(answer) {
+  if (!answer) return '-'
+  if (answer.questionType === 2) {
+    return answer.textAnswer || '未填写'
+  }
+  const labels = (answer.questionText || '').includes('帮扶频率')
+    ? supportFrequencyLabels
+    : scaleAnswerLabels
+  const label = labels[answer.numericAnswer] || '未选择'
+  return `${answer.numericAnswer || '-'} - ${label}`
+}
+
 function formatTime(value) {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
@@ -242,10 +318,112 @@ onMounted(loadSurveys)
   gap: 22px;
 }
 
+.submission-detail-page {
+  min-height: 0;
+}
+
+.submission-detail-card {
+  min-height: calc(100vh - 162px);
+  display: flex;
+  flex-direction: column;
+}
+
+.answer-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+
+.answer-head h2 {
+  margin: 16px 0 0;
+  color: #173875;
+  font-size: 28px;
+}
+
+.answer-head p {
+  margin: 8px 0 0;
+  color: #65799f;
+  font-weight: 800;
+}
+
+.status-pill {
+  min-width: 76px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 900;
+}
+
+.status-pill.done {
+  color: #1aa56a;
+  background: #eafff3;
+}
+
+.admin-answer-list {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.admin-answer-item {
+  border: 1px solid #d8e4f5;
+  border-radius: 14px;
+  background: #fff;
+  padding: 18px;
+}
+
+.question-title {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  color: #173875;
+  font-weight: 900;
+  line-height: 1.65;
+}
+
+.question-title b {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #315dbc;
+}
+
+.question-title em {
+  color: #8293bb;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.admin-answer-value {
+  margin-top: 14px;
+  margin-left: 46px;
+  min-height: 42px;
+  border: 1px solid #8ee7bd;
+  border-radius: 12px;
+  background: #eafff3;
+  color: #0d7a50;
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
 .left-column {
   display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 22px;
-  align-content: start;
+  align-content: stretch;
+  min-height: 0;
 }
 
 label {
@@ -285,6 +463,22 @@ label {
 
 .full {
   width: 100%;
+}
+
+.survey-list-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.survey-list-card .empty {
+  flex: 1;
+}
+
+.survey-list-card .survey-item {
+  flex: none;
 }
 
 .survey-item {
@@ -377,6 +571,15 @@ label {
   color: #8293bb;
   font-style: normal;
   white-space: nowrap;
+}
+
+.detail-link {
+  color: #315dbc;
+  font-weight: 900;
+}
+
+.detail-link:hover {
+  color: #173875;
 }
 
 .slim {

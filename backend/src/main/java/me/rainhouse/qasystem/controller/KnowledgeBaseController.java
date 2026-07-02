@@ -33,10 +33,13 @@ public class KnowledgeBaseController {
     @PostMapping("/upload")
     public Result<KbDocument> uploadDocument(@RequestParam("file") MultipartFile file,
                                              @RequestParam(value = "moduleType", required = false) String moduleType,
+                                             @RequestParam(value = "commonQuestion", required = false, defaultValue = "false") Boolean commonQuestion,
                                              HttpServletRequest request) {
         try {
             String adminId = getAdminIdOpt(request);
-            KbDocument doc = knowledgeBaseService.importDocument(file, adminId, moduleType);
+            KbDocument doc = Boolean.TRUE.equals(commonQuestion)
+                    ? knowledgeBaseService.importCommonQuestions(file, adminId, moduleType)
+                    : knowledgeBaseService.importDocument(file, adminId, moduleType);
             if (doc.getProcessStatus() == 2) {
                 return Result.success(doc);
             }

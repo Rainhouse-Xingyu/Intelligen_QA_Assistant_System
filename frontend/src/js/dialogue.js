@@ -1,5 +1,5 @@
 import { ref, onMounted, nextTick } from 'vue'
-import { apiForm } from './adminApi'
+import { apiForm, apiGet } from './adminApi'
 
 export default {
   name: 'Dialogue',
@@ -19,6 +19,7 @@ export default {
     const chatInput = ref('')
     const isLoading = ref(false)
     const messagesArea = ref(null)
+    const suggestedQuestions = ref([])
 
     const goHome = () => {
       emit('go-home')
@@ -43,6 +44,72 @@ export default {
       return text.replace(/\n/g, '<br/>')
     }
 
+    const normalizeSuggestedQuestion = (item) => {
+      const questionText = item.questionText || item.question_text || item.name || item.question || ''
+      return {
+        ...item,
+        questionText,
+        answerText: item.answerText || item.answer_text || item.answer || '',
+        moduleType: item.moduleType || item.module_type || ''
+      }
+    }
+
+    const loadSuggestedQuestions = async () => {
+      try {
+        const data = await apiGet('/api/chat/suggested-questions')
+        suggestedQuestions.value = Array.isArray(data)
+          ? data.map(normalizeSuggestedQuestion).filter(item => item.questionText)
+          : []
+      } catch (e) {
+        console.warn('加载常见问题失败', e)
+        suggestedQuestions.value = []
+      } finally {
+        scrollToBottom()
+      }
+      return suggestedQuestions.value
+    }
+
+    const ensureSuggestedQuestions = async (forceReload = false) => {
+      if (forceReload || !suggestedQuestions.value.length) {
+        await loadSuggestedQuestions()
+      }
+      return suggestedQuestions.value
+    }
+
+    const isCommonQuestionRequest = (text) => {
+      const normalized = text.replace(/[\s。！？!?，,、.]/g, '')
+      const hasFaqKeyword = /常见问题|热门问题|高频问题|问题列表|FAQ|faq/.test(normalized)
+      if (!hasFaqKeyword) return false
+      return /有什么|有哪些|都有|列表|推荐|显示|展示|列出|列出来|显示出来|展示出来|看看|看一下|给我|发我|是什么|入口|菜单/.test(normalized)
+        || /^(常见问题|热门问题|高频问题|问题列表|FAQ|faq)$/.test(normalized)
+    }
+
+    const showSuggestedQuestionsMessage = async () => {
+      const items = await ensureSuggestedQuestions(true)
+      if (!items.length) {
+        messages.value.push({ type: 'bot', content: '当前暂无可展示的常见问题。' })
+      } else {
+        messages.value.push({ type: 'bot', kind: 'faq', items: [...items] })
+      }
+      scrollToBottom()
+    }
+
+    const handleSuggestedQuestion = async (item) => {
+      const questionText = item.questionText || item.question_text || item.name || ''
+      const answerText = item.answerText || item.answer_text || item.answer || ''
+      if (!questionText || isLoading.value) return
+
+      if (!answerText) {
+        chatInput.value = questionText
+        await sendMessage(false)
+        return
+      }
+
+      messages.value.push({ type: 'user', content: questionText })
+      messages.value.push({ type: 'bot', content: answerText })
+      scrollToBottom()
+    }
+
     const sendMessage = async (isInitial = false) => {
       let textToSend = chatInput.value
       let categoryToSend = null
@@ -59,6 +126,11 @@ export default {
       if (!isInitial) {
         chatInput.value = ''
       }
+
+      if (isCommonQuestionRequest(userText)) {
+        await showSuggestedQuestionsMessage()
+        return
+      }
       
       isLoading.value = true
       scrollToBottom()
@@ -68,7 +140,10 @@ export default {
           query: userText,
           moduleType: categoryToSend
         })
-        messages.value.push({ type: 'bot', content: data || '收到。' })
+        messages.value.push({
+          type: 'bot',
+          content: data || '暂时没有找到和这个问题匹配的答案，我已经记录下来，后续会继续完善知识库。'
+        })
       } catch (e) {
         console.error(e)
         messages.value.push({ type: 'bot', content: e.message || '网络错误，请稍后再试。' })
@@ -79,6 +154,7 @@ export default {
     }
 
     onMounted(() => {
+      loadSuggestedQuestions()
       if (props.initialQuestion) {
         sendMessage(true)
       }
@@ -89,9 +165,11 @@ export default {
       chatInput,
       isLoading,
       messagesArea,
+      suggestedQuestions,
       goHome,
       handleChatEnter,
       formatContent,
+      handleSuggestedQuestion,
       sendMessage
     }
   }
