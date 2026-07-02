@@ -149,7 +149,18 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     private String embeddingText(KbQaEntry entry) {
         String question = entry.getQuestion() == null ? "" : entry.getQuestion().trim();
         String answer = entry.getAnswer() == null ? "" : entry.getAnswer().trim();
-        return question + "\n" + question + "\n" + answer;
+        String categoryPath = categoryPath(entry);
+        return "分类路径：" + categoryPath + "\n问题：" + question + "\n问题：" + question + "\n答案：" + answer;
+    }
+
+    private String categoryPath(KbQaEntry entry) {
+        return java.util.stream.Stream.of(
+                        entry.getCategoryL1Name(),
+                        entry.getCategoryL2Name(),
+                        entry.getCategoryL3Name()
+                )
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.joining(" > "));
     }
 
     private List<VectorDocument> lexicalCandidates(String query, String moduleType) {
@@ -162,7 +173,14 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 .eq(KbQaEntry::getStatus, 1)
                 .last("limit " + LEXICAL_CANDIDATE_LIMIT);
         if (StringUtils.hasText(moduleType)) {
-            wrapper.eq(KbQaEntry::getModuleType, moduleType.trim());
+            String trimmedModule = moduleType.trim();
+            wrapper.and(group -> group.eq(KbQaEntry::getModuleType, trimmedModule)
+                    .or()
+                    .eq(KbQaEntry::getCategoryL1Name, trimmedModule)
+                    .or()
+                    .eq(KbQaEntry::getCategoryL2Name, trimmedModule)
+                    .or()
+                    .eq(KbQaEntry::getCategoryL3Name, trimmedModule));
         }
         wrapper.and(group -> {
             for (int i = 0; i < terms.size(); i++) {

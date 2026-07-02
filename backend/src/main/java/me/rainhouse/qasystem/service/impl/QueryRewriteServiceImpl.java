@@ -1,12 +1,14 @@
 package me.rainhouse.qasystem.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import me.rainhouse.qasystem.common.utils.CasualConversationUtils;
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.QueryRewriteService;
 import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -32,6 +34,9 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
     public String rewrite(String query) {
         if (!StringUtils.hasText(query)) {
             return "";
+        }
+        if (CasualConversationUtils.isCasualOnly(query)) {
+            return query.trim();
         }
         if (localModelClient.enabled()) {
             try {
@@ -93,7 +98,7 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
 
     private String removeQuestionWords(String query) {
         return query.replaceAll("(我想|想问|咨询|请问|问一下|问下|这个|那个|一下|相关|政策|规定)", "")
-                .replaceAll("(怎么弄|怎么办|怎么|如何|咋|能不能|可以吗|是否可以|什么时候|啥时候|在哪|哪里|入口|查询|查看)", "")
+                .replaceAll("(有什么要求|有哪些要求|什么要求|有什么条件|有哪些条件|什么条件|怎么弄|怎么办|怎么|如何|咋|能不能|可以吗|是否可以|什么时候|啥时候|在哪|哪里|入口|查询|查看)", "")
                 .replaceAll("[,，。！？?\\s]+", "")
                 .trim();
     }
@@ -127,8 +132,30 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
         if (normalizedRewrite.equals(normalizedOriginal)) {
             return normalizedRewrite.length() > 14 && containsAny(normalizedRewrite, "流程", "条件", "要求", "时间", "查询", "政策");
         }
+        if (hasTopicDrift(normalizedOriginal, normalizedRewrite)) {
+            return false;
+        }
         return normalizedRewrite.length() >= Math.min(8, normalizedOriginal.length() + 2)
                 && containsAny(normalizedRewrite, "流程", "条件", "要求", "时间", "查询", "政策", "办理", "材料", "安排", "注意事项");
+    }
+
+    private boolean hasTopicDrift(String original, String rewritten) {
+        String originalTopic = detectTopic(original);
+        if ("教务问题".equals(originalTopic)) {
+            return false;
+        }
+        String rewrittenTopic = detectTopic(rewritten);
+        if (originalTopic.equals(rewrittenTopic)) {
+            return false;
+        }
+        return originalTopicKeywords(original).stream().noneMatch(rewritten::contains);
+    }
+
+    private java.util.List<String> originalTopicKeywords(String query) {
+        return policyTopics.keySet().stream()
+                .flatMap(pattern -> Arrays.stream(pattern.split("\\|")))
+                .filter(query::contains)
+                .toList();
     }
 
     private boolean containsAny(String text, String... keywords) {

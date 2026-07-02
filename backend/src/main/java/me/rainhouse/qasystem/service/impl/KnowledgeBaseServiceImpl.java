@@ -3,9 +3,17 @@ package me.rainhouse.qasystem.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import me.rainhouse.qasystem.entity.KbAnswerTemplate;
+import me.rainhouse.qasystem.entity.KbCategory;
 import me.rainhouse.qasystem.entity.KbDocument;
+import me.rainhouse.qasystem.entity.KbQaSourceRef;
 import me.rainhouse.qasystem.entity.KbQaEntry;
+import me.rainhouse.qasystem.entity.KbSourceReference;
+import me.rainhouse.qasystem.mapper.KbAnswerTemplateMapper;
+import me.rainhouse.qasystem.mapper.KbCategoryMapper;
 import me.rainhouse.qasystem.mapper.KbDocumentMapper;
+import me.rainhouse.qasystem.mapper.KbQaSourceRefMapper;
+import me.rainhouse.qasystem.mapper.KbSourceReferenceMapper;
 import me.rainhouse.qasystem.service.KbQaEntryService;
 import me.rainhouse.qasystem.service.KnowledgeBaseService;
 import me.rainhouse.qasystem.service.VectorSearchService;
@@ -14,6 +22,8 @@ import me.rainhouse.qasystem.service.kb.DocumentParserUtil;
 import me.rainhouse.qasystem.service.kb.FaqItem;
 import me.rainhouse.qasystem.service.kb.KnowledgeChunker;
 import me.rainhouse.qasystem.service.kb.ParsedDocument;
+import me.rainhouse.qasystem.service.kb.StructuredFaqExcelParser;
+import me.rainhouse.qasystem.service.kb.StructuredFaqItem;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -25,17 +35,34 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDocument> implements KnowledgeBaseService {
+
+    private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s，。；;）)】\\]>]+");
 
     @Value("${knowledge.upload-dir:uploads/kb}")
     private String uploadDir;
 
     @Autowired
     private KbQaEntryService kbQaEntryService;
+
+    @Autowired
+    private KbCategoryMapper kbCategoryMapper;
+
+    @Autowired
+    private KbAnswerTemplateMapper kbAnswerTemplateMapper;
+
+    @Autowired
+    private KbSourceReferenceMapper kbSourceReferenceMapper;
+
+    @Autowired
+    private KbQaSourceRefMapper kbQaSourceRefMapper;
 
     @Autowired
     private DocumentParserUtil documentParserUtil;
@@ -45,6 +72,9 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
 
     @Autowired
     private KnowledgeChunker knowledgeChunker;
+
+    @Autowired
+    private StructuredFaqExcelParser structuredFaqExcelParser;
 
     @Autowired
     private VectorSearchService vectorSearchService;
@@ -66,6 +96,20 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             document.setFileUrl(storedPath);
             this.updateById(document);
 
+            Path storedFilePath = resolveStoredPath(storedPath);
+            if (structuredFaqExcelParser.supports(document.getFileName())) {
+                List<StructuredFaqItem> structuredItems = structuredFaqExcelParser.parse(storedFilePath);
+                if (!structuredItems.isEmpty()) {
+                    List<KbQaEntry> entries = saveStructuredFaqItems(structuredItems, document.getId(), uploaderId, "Excel");
+                    vectorSearchService.upsertEntries(entries);
+                    document.setProcessStatus(2);
+                    document.setProcessMessage("结构化 FAQ 导入成功，已生成 " + entries.size() + " 条知识库词条");
+                    this.updateById(document);
+                    log.info("结构化 FAQ Excel 导入成功: documentId={}, entries={}", document.getId(), entries.size());
+                    return document;
+                }
+            }
+
             ParsedDocument parsedDocument = documentParserUtil.parse(file);
             List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName());
             List<KbQaEntry> entries = knowledgeChunker.chunk(
@@ -75,6 +119,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                     normalizeModuleType(moduleType),
                     parsedDocument.sourceType()
             );
+            entries.forEach(entry -> normalizeEntryForFallbackCategory(entry, moduleType));
 
             if (entries.isEmpty()) {
                 document.setProcessStatus(3);
@@ -84,6 +129,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             }
 
             kbQaEntryService.saveBatch(entries);
+            entries.forEach(this::syncSourceReferences);
             vectorSearchService.upsertEntries(entries);
             document.setProcessStatus(2);
             document.setProcessMessage("解析成功，已生成 " + entries.size() + " 条知识库词条");
@@ -121,10 +167,24 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         document.setProcessMessage("正在重新解析");
         this.updateById(document);
 
+        String createdBy = StringUtils.hasText(operatorId) ? operatorId : document.getUploaderId();
         try {
+            if (structuredFaqExcelParser.supports(document.getFileName())) {
+                List<StructuredFaqItem> structuredItems = structuredFaqExcelParser.parse(storedPath);
+                if (!structuredItems.isEmpty()) {
+                    removeEntriesByDocumentId(document.getId());
+                    List<KbQaEntry> entries = saveStructuredFaqItems(structuredItems, document.getId(), createdBy, "Excel");
+                    vectorSearchService.upsertEntries(entries);
+                    document.setProcessStatus(2);
+                    document.setProcessMessage("结构化 FAQ 重新导入成功，已生成 " + entries.size() + " 条知识库词条");
+                    this.updateById(document);
+                    log.info("结构化 FAQ Excel 重新导入成功 documentId={}, entries={}", document.getId(), entries.size());
+                    return document;
+                }
+            }
+
             ParsedDocument parsedDocument = documentParserUtil.parse(storedPath, document.getFileName());
             List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName());
-            String createdBy = StringUtils.hasText(operatorId) ? operatorId : document.getUploaderId();
             List<KbQaEntry> entries = knowledgeChunker.chunk(
                     faqItems,
                     document.getId(),
@@ -132,6 +192,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                     normalizeModuleType(moduleType),
                     parsedDocument.sourceType()
             );
+            entries.forEach(entry -> normalizeEntryForFallbackCategory(entry, moduleType));
 
             if (entries.isEmpty()) {
                 document.setProcessStatus(3);
@@ -142,6 +203,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
 
             removeEntriesByDocumentId(document.getId());
             kbQaEntryService.saveBatch(entries);
+            entries.forEach(this::syncSourceReferences);
             vectorSearchService.upsertEntries(entries);
             document.setProcessStatus(2);
             document.setProcessMessage("解析成功，已生成 " + entries.size() + " 条知识库词条");
@@ -207,7 +269,13 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
     }
 
     @Override
-    public List<KbQaEntry> listEntries(String keyword, String moduleType, Integer status, String sourceType) {
+    public List<KbQaEntry> listEntries(String keyword,
+                                       String moduleType,
+                                       Integer status,
+                                       String sourceType,
+                                       String categoryL1,
+                                       String categoryL2,
+                                       String categoryL3) {
         LambdaQueryWrapper<KbQaEntry> wrapper = new LambdaQueryWrapper<KbQaEntry>()
                 .orderByDesc(KbQaEntry::getUpdatedAt)
                 .orderByDesc(KbQaEntry::getCreatedAt);
@@ -226,6 +294,15 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         if (StringUtils.hasText(sourceType)) {
             wrapper.eq(KbQaEntry::getSourceType, sourceType.trim());
         }
+        if (StringUtils.hasText(categoryL1)) {
+            wrapper.eq(KbQaEntry::getCategoryL1Name, categoryL1.trim());
+        }
+        if (StringUtils.hasText(categoryL2)) {
+            wrapper.eq(KbQaEntry::getCategoryL2Name, categoryL2.trim());
+        }
+        if (StringUtils.hasText(categoryL3)) {
+            wrapper.eq(KbQaEntry::getCategoryL3Name, categoryL3.trim());
+        }
         return kbQaEntryService.list(wrapper);
     }
 
@@ -240,10 +317,13 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         entry.setStatus(entry.getStatus() == null ? 1 : entry.getStatus());
         entry.setModuleType(normalizeModuleType(entry.getModuleType()));
         entry.setSourceType(StringUtils.hasText(entry.getSourceType()) ? entry.getSourceType().trim() : "人工录入");
+        normalizeEntryCategory(entry);
+        normalizeEntryTemplate(entry);
         entry.setCreatedBy(operatorId);
         entry.setCreatedAt(LocalDateTime.now());
         entry.setUpdatedAt(LocalDateTime.now());
         kbQaEntryService.save(entry);
+        syncSourceReferences(entry);
         vectorSearchService.upsertEntry(entry);
         return entry;
     }
@@ -274,9 +354,30 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         if (StringUtils.hasText(entry.getSourceType())) {
             existing.setSourceType(entry.getSourceType().trim());
         }
+        if (StringUtils.hasText(entry.getCategoryL1Name())) {
+            existing.setCategoryL1Name(entry.getCategoryL1Name().trim());
+        }
+        if (StringUtils.hasText(entry.getCategoryL2Name())) {
+            existing.setCategoryL2Name(entry.getCategoryL2Name().trim());
+        }
+        if (StringUtils.hasText(entry.getCategoryL3Name())) {
+            existing.setCategoryL3Name(entry.getCategoryL3Name().trim());
+        }
+        if (StringUtils.hasText(entry.getTemplateCode())) {
+            existing.setTemplateCode(entry.getTemplateCode().trim());
+        }
+        if (StringUtils.hasText(entry.getSourceTitle())) {
+            existing.setSourceTitle(entry.getSourceTitle().trim());
+        }
+        if (StringUtils.hasText(entry.getSourceUrl())) {
+            existing.setSourceUrl(entry.getSourceUrl().trim());
+        }
+        normalizeEntryCategory(existing);
+        normalizeEntryTemplate(existing);
         existing.setUpdatedAt(LocalDateTime.now());
         validateEntry(existing);
         kbQaEntryService.updateById(existing);
+        syncSourceReferences(existing);
         vectorSearchService.upsertEntry(existing);
         return existing;
     }
@@ -293,6 +394,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         }
         boolean removed = kbQaEntryService.removeById(entry.getId());
         if (removed) {
+            kbQaSourceRefMapper.delete(new LambdaQueryWrapper<KbQaSourceRef>().eq(KbQaSourceRef::getQaEntryId, entry.getId()));
             vectorSearchService.removeEntry(entry.getId());
         }
         return removed;
@@ -322,9 +424,189 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                 .toList();
         boolean removed = kbQaEntryService.removeByIds(existingIds);
         if (removed) {
+            kbQaSourceRefMapper.delete(new LambdaQueryWrapper<KbQaSourceRef>().in(KbQaSourceRef::getQaEntryId, existingIds));
             existingIds.forEach(vectorSearchService::removeEntry);
         }
         return removed ? existingIds.size() : 0;
+    }
+
+    private List<KbQaEntry> saveStructuredFaqItems(List<StructuredFaqItem> items,
+                                                   Long documentId,
+                                                   String createdBy,
+                                                   String sourceType) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<KbQaEntry> entries = new ArrayList<>();
+        for (StructuredFaqItem item : items) {
+            KbQaEntry entry = new KbQaEntry();
+            entry.setDocumentId(documentId);
+            entry.setCategoryL1Name(item.categoryL1());
+            entry.setCategoryL2Name(item.categoryL2());
+            entry.setCategoryL3Name(item.categoryL3());
+            entry.setQuestion(item.question());
+            entry.setAnswer(item.answer());
+            entry.setTemplateCode(item.templateCode());
+            entry.setStatus(1);
+            entry.setModuleType(item.categoryL1());
+            entry.setSourceType(sourceType);
+            entry.setCreatedBy(createdBy);
+            entry.setCreatedAt(now);
+            entry.setUpdatedAt(now);
+            normalizeEntryCategory(entry);
+            normalizeEntryTemplate(entry);
+            validateEntry(entry);
+            entries.add(entry);
+        }
+        kbQaEntryService.saveBatch(entries);
+        entries.forEach(this::syncSourceReferences);
+        return entries;
+    }
+
+    private void normalizeEntryForFallbackCategory(KbQaEntry entry, String moduleType) {
+        String categoryL1 = StringUtils.hasText(moduleType) ? moduleType.trim() : entry.getModuleType();
+        if (!StringUtils.hasText(entry.getCategoryL1Name())) {
+            entry.setCategoryL1Name(normalizeModuleType(categoryL1));
+        }
+        normalizeEntryCategory(entry);
+        normalizeEntryTemplate(entry);
+    }
+
+    private void normalizeEntryCategory(KbQaEntry entry) {
+        if (entry == null) {
+            return;
+        }
+        if (!StringUtils.hasText(entry.getCategoryL1Name()) && StringUtils.hasText(entry.getModuleType())) {
+            entry.setCategoryL1Name(entry.getModuleType().trim());
+        }
+        if (!StringUtils.hasText(entry.getCategoryL1Name())) {
+            return;
+        }
+        KbCategory l1 = ensureCategory(null, entry.getCategoryL1Name().trim(), 1);
+        entry.setCategoryL1Id(l1.getId());
+        entry.setCategoryL1Name(l1.getName());
+        entry.setModuleType(l1.getName());
+
+        if (!StringUtils.hasText(entry.getCategoryL2Name())) {
+            entry.setCategoryId(null);
+            return;
+        }
+        KbCategory l2 = ensureCategory(l1.getId(), entry.getCategoryL2Name().trim(), 2);
+        entry.setCategoryL2Id(l2.getId());
+        entry.setCategoryL2Name(l2.getName());
+
+        if (!StringUtils.hasText(entry.getCategoryL3Name())) {
+            entry.setCategoryId(null);
+            return;
+        }
+        KbCategory l3 = ensureCategory(l2.getId(), entry.getCategoryL3Name().trim(), 3);
+        entry.setCategoryL3Id(l3.getId());
+        entry.setCategoryL3Name(l3.getName());
+        entry.setCategoryId(l3.getId());
+    }
+
+    private KbCategory ensureCategory(Long parentId, String name, int level) {
+        LambdaQueryWrapper<KbCategory> wrapper = new LambdaQueryWrapper<KbCategory>()
+                .eq(KbCategory::getName, name)
+                .eq(KbCategory::getLevel, level);
+        if (parentId == null) {
+            wrapper.isNull(KbCategory::getParentId);
+        } else {
+            wrapper.eq(KbCategory::getParentId, parentId);
+        }
+        KbCategory existing = kbCategoryMapper.selectOne(wrapper.last("limit 1"));
+        if (existing != null) {
+            return existing;
+        }
+        KbCategory category = new KbCategory();
+        category.setParentId(parentId);
+        category.setName(name);
+        category.setLevel(level);
+        category.setSortOrder(0);
+        category.setStatus(1);
+        category.setCreatedAt(LocalDateTime.now());
+        category.setUpdatedAt(LocalDateTime.now());
+        kbCategoryMapper.insert(category);
+        return category;
+    }
+
+    private void normalizeEntryTemplate(KbQaEntry entry) {
+        if (entry == null || !StringUtils.hasText(entry.getTemplateCode())) {
+            return;
+        }
+        String templateCode = entry.getTemplateCode().trim();
+        KbAnswerTemplate template = kbAnswerTemplateMapper.selectOne(new LambdaQueryWrapper<KbAnswerTemplate>()
+                .eq(KbAnswerTemplate::getTemplateCode, templateCode)
+                .last("limit 1"));
+        if (template == null) {
+            template = new KbAnswerTemplate();
+            template.setTemplateCode(templateCode);
+            template.setTemplateName(templateCode);
+            template.setTemplateContent("<答案>");
+            template.setStatus(1);
+            template.setCreatedAt(LocalDateTime.now());
+            template.setUpdatedAt(LocalDateTime.now());
+            kbAnswerTemplateMapper.insert(template);
+        }
+        entry.setTemplateId(template.getId());
+        entry.setTemplateCode(template.getTemplateCode());
+    }
+
+    private void syncSourceReferences(KbQaEntry entry) {
+        if (entry == null || entry.getId() == null) {
+            return;
+        }
+        kbQaSourceRefMapper.delete(new LambdaQueryWrapper<KbQaSourceRef>().eq(KbQaSourceRef::getQaEntryId, entry.getId()));
+        List<String> urls = extractUrls(entry);
+        if (urls.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < urls.size(); i++) {
+            KbSourceReference source = ensureSourceReference(entry.getSourceTitle(), urls.get(i), entry.getSourceType());
+            KbQaSourceRef ref = new KbQaSourceRef();
+            ref.setQaEntryId(entry.getId());
+            ref.setSourceId(source.getId());
+            ref.setSortOrder(i);
+            kbQaSourceRefMapper.insert(ref);
+        }
+        if (!StringUtils.hasText(entry.getSourceUrl())) {
+            entry.setSourceUrl(urls.get(0));
+            kbQaEntryService.updateById(entry);
+        }
+    }
+
+    private KbSourceReference ensureSourceReference(String title, String url, String sourceType) {
+        KbSourceReference existing = kbSourceReferenceMapper.selectOne(new LambdaQueryWrapper<KbSourceReference>()
+                .eq(KbSourceReference::getUrl, url)
+                .last("limit 1"));
+        if (existing != null) {
+            return existing;
+        }
+        KbSourceReference source = new KbSourceReference();
+        source.setTitle(StringUtils.hasText(title) ? title.trim() : null);
+        source.setUrl(url);
+        source.setSourceType(StringUtils.hasText(sourceType) ? sourceType.trim() : "official_site");
+        source.setCreatedAt(LocalDateTime.now());
+        kbSourceReferenceMapper.insert(source);
+        return source;
+    }
+
+    private List<String> extractUrls(KbQaEntry entry) {
+        List<String> urls = new ArrayList<>();
+        if (StringUtils.hasText(entry.getSourceUrl())) {
+            urls.add(entry.getSourceUrl().trim());
+        }
+        if (StringUtils.hasText(entry.getAnswer())) {
+            Matcher matcher = URL_PATTERN.matcher(entry.getAnswer());
+            while (matcher.find()) {
+                String url = matcher.group();
+                if (!urls.contains(url)) {
+                    urls.add(url);
+                }
+            }
+        }
+        return urls;
     }
 
     private void validateFile(MultipartFile file) {
@@ -354,6 +636,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                 .map(KbQaEntry::getId)
                 .toList();
         kbQaEntryService.removeByIds(relatedEntryIds);
+        kbQaSourceRefMapper.delete(new LambdaQueryWrapper<KbQaSourceRef>().in(KbQaSourceRef::getQaEntryId, relatedEntryIds));
         relatedEntryIds.forEach(vectorSearchService::removeEntry);
     }
 

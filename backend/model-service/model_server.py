@@ -114,6 +114,8 @@ class Reference(BaseModel):
     knowledgeId: int | None = None
     question: str | None = None
     answer: str | None = None
+    categoryPath: str | None = None
+    sourceUrl: str | None = None
     score: float | None = None
 
 
@@ -145,6 +147,76 @@ class ChunkItem(BaseModel):
 class ChunkResponse(BaseModel):
     """文档切片响应"""
     items: list[ChunkItem]
+
+
+REWRITE_TOPIC_GROUPS = {
+    "考务": ["补考", "缓考", "考试", "线上考试", "线下考试", "考场", "准考证", "成绩", "四六级"],
+    "教学运行": ["选课", "退课", "补选", "课表", "调课", "重修", "学分", "培养方案"],
+    "学业帮扶": ["挂科", "绩点", "学业预警", "帮扶", "困难", "留级", "毕业"],
+    "学籍事务": ["请假", "销假", "休学", "复学", "转专业", "学籍", "证明"],
+    "心理辅导": ["心理", "焦虑", "压力", "失眠", "咨询", "情绪"],
+}
+
+
+def normalize_rewrite_text(text: str | None) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text.replace("\r", "\n")).strip()
+    text = re.sub(r"^[你好您好麻烦请问一下问下我想咨询咨询一下,，。\s]+", "", text)
+    return re.sub(r"[？！?!.。；;]+$", "", text).strip()
+
+
+def detect_rewrite_topic(text: str) -> str | None:
+    for group, keywords in REWRITE_TOPIC_GROUPS.items():
+        if any(keyword in text for keyword in keywords):
+            return group
+    return None
+
+
+def rewrite_topic_keywords(text: str) -> list[str]:
+    return [
+        keyword
+        for keywords in REWRITE_TOPIC_GROUPS.values()
+        for keyword in keywords
+        if keyword in text
+    ]
+
+
+def rewrite_is_usable(original: str, rewritten: str) -> bool:
+    normalized_original = normalize_rewrite_text(original)
+    normalized_rewrite = normalize_rewrite_text(rewritten)
+    if not normalized_rewrite:
+        return False
+    original_topic = detect_rewrite_topic(normalized_original)
+    if original_topic:
+        rewritten_topic = detect_rewrite_topic(normalized_rewrite)
+        original_keywords = rewrite_topic_keywords(normalized_original)
+        if rewritten_topic != original_topic and not any(keyword in normalized_rewrite for keyword in original_keywords):
+            return False
+    return bool(re.search(r"(流程|条件|要求|时间|查询|政策|办理|材料|安排|注意事项|规则)", normalized_rewrite))
+
+
+def rule_rewrite_query(query: str) -> str:
+    normalized = normalize_rewrite_text(query)
+    core = re.sub(r"(我想|想问|咨询|请问|问一下|问下|这个|那个|一下|相关|政策|规定)", "", normalized)
+    core = re.sub(
+        r"(有什么要求|有哪些要求|什么要求|有什么条件|有哪些条件|什么条件|怎么弄|怎么办|怎么|如何|咋|能不能|可以吗|是否可以|什么时候|啥时候|在哪|哪里|入口|查询|查看)",
+        "",
+        core,
+    )
+    core = re.sub(r"[,，。！？?\s]+", "", core).strip() or "教务问题"
+    core = core[:36]
+    if any(word in normalized for word in ["什么时候", "啥时候", "时间", "截止", "几号", "日期", "安排"]):
+        text = f"{core}的时间安排、截止要求和查询方式是什么"
+    elif any(word in normalized for word in ["怎么", "如何", "咋", "怎么办", "流程", "申请", "办理", "提交", "弄"]):
+        text = f"{core}的办理流程、申请条件和所需材料是什么"
+    elif any(word in normalized for word in ["条件", "要求", "资格", "对象", "范围", "能不能", "可以吗", "是否可以"]):
+        text = f"{core}的适用条件、政策要求和注意事项是什么"
+    elif any(word in normalized for word in ["在哪", "哪里", "入口", "查询", "查看"]):
+        text = f"{core}的查询入口、办理地点或查看方式是什么"
+    else:
+        text = f"关于{core}，学校政策中的适用范围、办理要求和注意事项是什么"
+    return text if text.endswith(("？", "?")) else f"{text}？"
 
 
 @app.get("/health")
@@ -402,6 +474,9 @@ def rewrite(request: RewriteRequest) -> RewriteResponse:
     text = text.splitlines()[0].strip(" ：:")
     if text and not text.endswith(("？", "?")):
         text = f"{text}？"
+    if not rewrite_is_usable(request.query, text):
+        print(f"[API] /rewrite 模型结果疑似跑题，使用规则改写兜底： 「{text or request.query}」")
+        text = rule_rewrite_query(request.query)
     print(f"[API] /rewrite 完成 → 「{text or request.query}」")
     return RewriteResponse(rewrite=text or request.query)
 
@@ -514,8 +589,10 @@ def generate(request: GenerateRequest) -> GenerateResponse:
     for index, reference in enumerate(request.references[:3], start=1):
         context_lines.append(
             f"[{index}] 知识库ID：{reference.knowledgeId}\n"
+            f"分类路径：{reference.categoryPath or ''}\n"
             f"问题：{reference.question or ''}\n"
             f"答案：{reference.answer or ''}\n"
+            f"来源链接：{reference.sourceUrl or ''}\n"
             f"匹配分：{reference.score if reference.score is not None else ''}"
         )
     context = "\n\n".join(context_lines)

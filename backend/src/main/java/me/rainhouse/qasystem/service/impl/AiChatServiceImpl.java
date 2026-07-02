@@ -2,6 +2,7 @@ package me.rainhouse.qasystem.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import me.rainhouse.qasystem.common.dto.AiChatResponse;
+import me.rainhouse.qasystem.common.utils.CasualConversationUtils;
 import me.rainhouse.qasystem.entity.QuestionRaw;
 import me.rainhouse.qasystem.mapper.QuestionRawMapper;
 import me.rainhouse.qasystem.service.AiChatService;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
 
 @Slf4j
@@ -58,6 +60,21 @@ public class AiChatServiceImpl implements AiChatService {
         }
 
         long start = System.currentTimeMillis();
+        if (CasualConversationUtils.isCasualOnly(query)) {
+            return AiChatResponse.builder()
+                    .originalQuestion(query)
+                    .rewriteQuestion(query.trim())
+                    .moduleType("闲聊")
+                    .hitStatus(0)
+                    .hitLabel("直接回复")
+                    .topScore(0.0)
+                    .answer(CasualConversationUtils.directReply(query))
+                    .answerSource("DIRECT_REPLY")
+                    .responseTimeMs(System.currentTimeMillis() - start)
+                    .references(List.of())
+                    .build();
+        }
+
         String memoryContext = chatMemoryService.buildRecentContext(sessionId, query);
         String rewriteQuestion = queryRewriteService.rewrite(query);
         String retrievalQuestion = chatMemoryService.buildRetrievalQuery(rewriteQuestion, memoryContext);

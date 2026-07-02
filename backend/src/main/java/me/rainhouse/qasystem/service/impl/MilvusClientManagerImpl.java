@@ -36,6 +36,7 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
 
     private static final int VARCHAR_QUESTION_MAX_LENGTH = 1000;
     private static final int VARCHAR_MODULE_TYPE_MAX_LENGTH = 50;
+    private static final int VARCHAR_CATEGORY_PATH_MAX_LENGTH = 300;
 
     private final Gson gson = new Gson();
     private final MilvusClientV2 client;
@@ -47,17 +48,27 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
     private final String moduleTypeField;
     private final String questionField;
     private final String knowledgeIdField;
+    private final String categoryL1IdField;
+    private final String categoryL2IdField;
+    private final String categoryL3IdField;
+    private final String categoryPathField;
+    private final String statusField;
 
     public MilvusClientManagerImpl(KbQaEntryService kbQaEntryService,
                                    @Value("${milvus.endpoint}") String endpoint,
                                    @Value("${milvus.api-key:}") String apiKey,
                                    @Value("${milvus.database-name:}") String databaseName,
-                                   @Value("${milvus.collection-name:knowledge_vector}") String collectionName,
+                                   @Value("${milvus.collection-name:knowledge_vector_v2}") String collectionName,
                                    @Value("${milvus.field.id:id}") String idField,
                                    @Value("${milvus.field.embedding:embedding}") String embeddingField,
                                    @Value("${milvus.field.module-type:module_type}") String moduleTypeField,
                                    @Value("${milvus.field.question:question}") String questionField,
-                                   @Value("${milvus.field.knowledge-id:knowledge_id}") String knowledgeIdField) {
+                                   @Value("${milvus.field.knowledge-id:knowledge_id}") String knowledgeIdField,
+                                   @Value("${milvus.field.category-l1-id:category_l1_id}") String categoryL1IdField,
+                                   @Value("${milvus.field.category-l2-id:category_l2_id}") String categoryL2IdField,
+                                   @Value("${milvus.field.category-l3-id:category_l3_id}") String categoryL3IdField,
+                                   @Value("${milvus.field.category-path:category_path}") String categoryPathField,
+                                   @Value("${milvus.field.status:status}") String statusField) {
         this.kbQaEntryService = kbQaEntryService;
         this.collectionName = collectionName;
         this.idField = idField;
@@ -65,6 +76,11 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
         this.moduleTypeField = moduleTypeField;
         this.questionField = questionField;
         this.knowledgeIdField = knowledgeIdField;
+        this.categoryL1IdField = categoryL1IdField;
+        this.categoryL2IdField = categoryL2IdField;
+        this.categoryL3IdField = categoryL3IdField;
+        this.categoryPathField = categoryPathField;
+        this.statusField = statusField;
 
         MilvusClientV2 initializedClient = null;
         boolean initializedAvailable = false;
@@ -177,7 +193,18 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
                 .annsField(embeddingField)
                 .data(Collections.singletonList(new FloatVec(queryVector)))
                 .topK(Math.max(1, topK))
-                .outputFields(List.of(idField, knowledgeIdField, questionField, moduleTypeField, embeddingField))
+                .outputFields(List.of(
+                        idField,
+                        knowledgeIdField,
+                        questionField,
+                        moduleTypeField,
+                        categoryL1IdField,
+                        categoryL2IdField,
+                        categoryL3IdField,
+                        categoryPathField,
+                        statusField,
+                        embeddingField
+                ))
                 .searchParams(Map.of("metric_type", "COSINE"));
         if (StringUtils.hasText(moduleType)) {
             builder.filter(moduleTypeField + " == \"" + escapeMilvusString(moduleType) + "\"");
@@ -201,6 +228,11 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
         row.addProperty(knowledgeIdField, document.knowledgeId());
         row.addProperty(questionField, truncate(document.question(), VARCHAR_QUESTION_MAX_LENGTH));
         row.addProperty(moduleTypeField, truncate(document.moduleType(), VARCHAR_MODULE_TYPE_MAX_LENGTH));
+        row.addProperty(categoryL1IdField, document.categoryL1Id() == null ? 0L : document.categoryL1Id());
+        row.addProperty(categoryL2IdField, document.categoryL2Id() == null ? 0L : document.categoryL2Id());
+        row.addProperty(categoryL3IdField, document.categoryL3Id() == null ? 0L : document.categoryL3Id());
+        row.addProperty(categoryPathField, truncate(document.categoryPath(), VARCHAR_CATEGORY_PATH_MAX_LENGTH));
+        row.addProperty(statusField, 1L);
         row.add(embeddingField, gson.toJsonTree(toFloatList(document.vector())));
         return row;
     }
@@ -213,16 +245,29 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
         KbQaEntry entry = entries.get(knowledgeId);
         String question = stringValue(hit.getEntity().get(questionField));
         String moduleType = stringValue(hit.getEntity().get(moduleTypeField));
+        Long categoryL1Id = longValue(hit.getEntity().get(categoryL1IdField));
+        Long categoryL2Id = longValue(hit.getEntity().get(categoryL2IdField));
+        Long categoryL3Id = longValue(hit.getEntity().get(categoryL3IdField));
+        String categoryPath = stringValue(hit.getEntity().get(categoryPathField));
         if (entry != null) {
             question = StringUtils.hasText(entry.getQuestion()) ? entry.getQuestion() : question;
             moduleType = StringUtils.hasText(entry.getModuleType()) ? entry.getModuleType() : moduleType;
+            categoryL1Id = entry.getCategoryL1Id() == null ? categoryL1Id : entry.getCategoryL1Id();
+            categoryL2Id = entry.getCategoryL2Id() == null ? categoryL2Id : entry.getCategoryL2Id();
+            categoryL3Id = entry.getCategoryL3Id() == null ? categoryL3Id : entry.getCategoryL3Id();
+            categoryPath = StringUtils.hasText(categoryPath(entry)) ? categoryPath(entry) : categoryPath;
         }
         return new VectorDocument(
                 knowledgeId,
                 question,
                 entry == null ? "" : entry.getAnswer(),
                 moduleType,
+                zeroToNull(categoryL1Id),
+                zeroToNull(categoryL2Id),
+                zeroToNull(categoryL3Id),
+                categoryPath,
                 entry == null ? null : entry.getSourceType(),
+                entry == null ? null : entry.getSourceUrl(),
                 floatArray(hit.getEntity().get(embeddingField))
         );
     }
@@ -261,6 +306,23 @@ public class MilvusClientManagerImpl implements MilvusClientManager {
             return Long.parseLong(text);
         }
         return null;
+    }
+
+    private Long zeroToNull(Long value) {
+        return value == null || value == 0L ? null : value;
+    }
+
+    private String categoryPath(KbQaEntry entry) {
+        if (entry == null) {
+            return "";
+        }
+        return java.util.stream.Stream.of(
+                        entry.getCategoryL1Name(),
+                        entry.getCategoryL2Name(),
+                        entry.getCategoryL3Name()
+                )
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining(" > "));
     }
 
     private String stringValue(Object value) {
