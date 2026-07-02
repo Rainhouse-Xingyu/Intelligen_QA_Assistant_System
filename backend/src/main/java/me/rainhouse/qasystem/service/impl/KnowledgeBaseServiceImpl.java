@@ -37,6 +37,9 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -111,7 +114,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             }
 
             ParsedDocument parsedDocument = documentParserUtil.parse(file);
-            List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName());
+            List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName(), categoryPathOptions());
             List<KbQaEntry> entries = knowledgeChunker.chunk(
                     faqItems,
                     document.getId(),
@@ -119,7 +122,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                     normalizeModuleType(moduleType),
                     parsedDocument.sourceType()
             );
-            entries.forEach(entry -> normalizeEntryForFallbackCategory(entry, moduleType));
+            entries.forEach(entry -> normalizeEntryForDocumentCategory(entry, moduleType));
 
             if (entries.isEmpty()) {
                 document.setProcessStatus(3);
@@ -184,7 +187,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
             }
 
             ParsedDocument parsedDocument = documentParserUtil.parse(storedPath, document.getFileName());
-            List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName());
+            List<FaqItem> faqItems = dataCleanService.cleanToFaq(parsedDocument.text(), document.getFileName(), categoryPathOptions());
             List<KbQaEntry> entries = knowledgeChunker.chunk(
                     faqItems,
                     document.getId(),
@@ -192,7 +195,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                     normalizeModuleType(moduleType),
                     parsedDocument.sourceType()
             );
-            entries.forEach(entry -> normalizeEntryForFallbackCategory(entry, moduleType));
+            entries.forEach(entry -> normalizeEntryForDocumentCategory(entry, moduleType));
 
             if (entries.isEmpty()) {
                 document.setProcessStatus(3);
@@ -464,13 +467,64 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         return entries;
     }
 
-    private void normalizeEntryForFallbackCategory(KbQaEntry entry, String moduleType) {
-        String categoryL1 = StringUtils.hasText(moduleType) ? moduleType.trim() : entry.getModuleType();
-        if (!StringUtils.hasText(entry.getCategoryL1Name())) {
-            entry.setCategoryL1Name(normalizeModuleType(categoryL1));
+    private void normalizeEntryForDocumentCategory(KbQaEntry entry, String moduleType) {
+        if (hasCompleteCategoryNames(entry) && categoryPathExists(entry)) {
+            normalizeEntryCategory(entry);
+            normalizeEntryTemplate(entry);
+            return;
         }
+        String fallbackL1 = StringUtils.hasText(moduleType) ? moduleType.trim() : "待归类";
+        entry.setCategoryL1Name(fallbackL1);
+        entry.setCategoryL2Name("待归类");
+        entry.setCategoryL3Name("待归类");
         normalizeEntryCategory(entry);
         normalizeEntryTemplate(entry);
+    }
+
+    private boolean hasCompleteCategoryNames(KbQaEntry entry) {
+        return entry != null
+                && StringUtils.hasText(entry.getCategoryL1Name())
+                && StringUtils.hasText(entry.getCategoryL2Name())
+                && StringUtils.hasText(entry.getCategoryL3Name());
+    }
+
+    private boolean categoryPathExists(KbQaEntry entry) {
+        KbCategory l1 = findCategory(null, entry.getCategoryL1Name().trim(), 1);
+        if (l1 == null) {
+            return false;
+        }
+        KbCategory l2 = findCategory(l1.getId(), entry.getCategoryL2Name().trim(), 2);
+        if (l2 == null) {
+            return false;
+        }
+        return findCategory(l2.getId(), entry.getCategoryL3Name().trim(), 3) != null;
+    }
+
+    private List<String> categoryPathOptions() {
+        List<KbCategory> categories = kbCategoryMapper.selectList(new LambdaQueryWrapper<KbCategory>()
+                .eq(KbCategory::getStatus, 1)
+                .orderByAsc(KbCategory::getLevel)
+                .orderByAsc(KbCategory::getSortOrder)
+                .orderByAsc(KbCategory::getId));
+        if (categories.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, KbCategory> byId = categories.stream()
+                .collect(Collectors.toMap(KbCategory::getId, Function.identity(), (left, right) -> left));
+        return categories.stream()
+                .filter(category -> Integer.valueOf(3).equals(category.getLevel()))
+                .map(l3 -> {
+                    KbCategory l2 = byId.get(l3.getParentId());
+                    KbCategory l1 = l2 == null ? null : byId.get(l2.getParentId());
+                    if (l1 == null || l2 == null) {
+                        return null;
+                    }
+                    return l1.getName() + " > " + l2.getName() + " > " + l3.getName();
+                })
+                .filter(StringUtils::hasText)
+                .distinct()
+                .limit(120)
+                .toList();
     }
 
     private void normalizeEntryCategory(KbQaEntry entry) {
@@ -507,15 +561,7 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
     }
 
     private KbCategory ensureCategory(Long parentId, String name, int level) {
-        LambdaQueryWrapper<KbCategory> wrapper = new LambdaQueryWrapper<KbCategory>()
-                .eq(KbCategory::getName, name)
-                .eq(KbCategory::getLevel, level);
-        if (parentId == null) {
-            wrapper.isNull(KbCategory::getParentId);
-        } else {
-            wrapper.eq(KbCategory::getParentId, parentId);
-        }
-        KbCategory existing = kbCategoryMapper.selectOne(wrapper.last("limit 1"));
+        KbCategory existing = findCategory(parentId, name, level);
         if (existing != null) {
             return existing;
         }
@@ -529,6 +575,18 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         category.setUpdatedAt(LocalDateTime.now());
         kbCategoryMapper.insert(category);
         return category;
+    }
+
+    private KbCategory findCategory(Long parentId, String name, int level) {
+        LambdaQueryWrapper<KbCategory> wrapper = new LambdaQueryWrapper<KbCategory>()
+                .eq(KbCategory::getName, name)
+                .eq(KbCategory::getLevel, level);
+        if (parentId == null) {
+            wrapper.isNull(KbCategory::getParentId);
+        } else {
+            wrapper.eq(KbCategory::getParentId, parentId);
+        }
+        return kbCategoryMapper.selectOne(wrapper.last("limit 1"));
     }
 
     private void normalizeEntryTemplate(KbQaEntry entry) {

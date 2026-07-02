@@ -52,6 +52,10 @@ public class DataCleanService {
     }
 
     public List<FaqItem> cleanToFaq(String rawText, String fallbackTitle) {
+        return cleanToFaq(rawText, fallbackTitle, List.of());
+    }
+
+    public List<FaqItem> cleanToFaq(String rawText, String fallbackTitle, List<String> categoryPaths) {
         String normalized = normalize(rawText);
         if (!StringUtils.hasText(normalized)) {
             return List.of();
@@ -67,7 +71,7 @@ public class DataCleanService {
             return faqItems;
         }
 
-        faqItems = parseWithLocalModel(normalized, fallbackTitle);
+        faqItems = parseWithLocalModel(normalized, fallbackTitle, categoryPaths);
         if (!faqItems.isEmpty()) {
             return faqItems;
         }
@@ -135,7 +139,7 @@ public class DataCleanService {
         return items;
     }
 
-    private List<FaqItem> parseWithLocalModel(String text, String fallbackTitle) {
+    private List<FaqItem> parseWithLocalModel(String text, String fallbackTitle, List<String> categoryPaths) {
         if (localModelClient == null || !localModelClient.enabled() || text.length() < 120) {
             return List.of();
         }
@@ -150,10 +154,11 @@ public class DataCleanService {
                 List<FaqItem> modelItems = localModelClient.chunkToFaq(
                         cleanBlock,
                         modelBlockTitle(cleanBlock, fallbackTitle),
-                        MAX_MODEL_ITEMS_PER_BLOCK
+                        MAX_MODEL_ITEMS_PER_BLOCK,
+                        categoryPaths
                 );
                 for (FaqItem item : modelItems) {
-                    addModelItemIfValid(items, item.question(), item.answer());
+                    addModelItemIfValid(items, item);
                 }
             } catch (Exception e) {
                 log.warn("本地模型文档切片失败，回退规则切片: {}", e.getMessage());
@@ -453,7 +458,9 @@ public class DataCleanService {
         }
     }
 
-    private void addModelItemIfValid(List<FaqItem> items, String question, String answer) {
+    private void addModelItemIfValid(List<FaqItem> items, FaqItem item) {
+        String question = item == null ? null : item.question();
+        String answer = item == null ? null : item.answer();
         if (!StringUtils.hasText(question) || !StringUtils.hasText(answer)) {
             return;
         }
@@ -474,7 +481,7 @@ public class DataCleanService {
                     cleanAnswer.length() > 80 ? cleanAnswer.substring(0, 80) + "..." : cleanAnswer);
             return;
         }
-        items.add(new FaqItem(cleanQuestion, cleanAnswer));
+        items.add(new FaqItem(item.categoryL1(), item.categoryL2(), item.categoryL3(), cleanQuestion, cleanAnswer));
     }
 
     private String normalizeModelQuestion(String question, String answer) {

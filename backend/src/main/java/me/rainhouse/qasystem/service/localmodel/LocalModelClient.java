@@ -21,5 +21,9 @@ public interface LocalModelClient {
         return List.of();
     }
 
+    default List<FaqItem> chunkToFaq(String text, String title, int maxItems, List<String> categoryPaths) {
+        return chunkToFaq(text, title, maxItems);
+    }
+
     boolean enabled();
 }

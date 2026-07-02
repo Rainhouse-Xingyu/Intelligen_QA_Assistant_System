@@ -98,17 +98,32 @@ public class LocalModelClientImpl implements LocalModelClient {
 
     @Override
     public List<FaqItem> chunkToFaq(String text, String title, int maxItems) {
+        return chunkToFaq(text, title, maxItems, List.of());
+    }
+
+    @Override
+    public List<FaqItem> chunkToFaq(String text, String title, int maxItems, List<String> categoryPaths) {
         JsonNode node = post("/chunk", Map.of(
                 "text", text == null ? "" : text,
                 "title", title == null ? "" : title,
-                "maxItems", Math.max(1, maxItems)
+                "maxItems", Math.max(1, maxItems),
+                "categoryPaths", categoryPaths == null ? List.of() : categoryPaths
         ));
         List<FaqItem> items = new ArrayList<>();
         node.path("items").forEach(item -> {
+            String categoryL1 = item.path("categoryL1").asText("").trim();
+            String categoryL2 = item.path("categoryL2").asText("").trim();
+            String categoryL3 = item.path("categoryL3").asText("").trim();
             String question = item.path("question").asText("").trim();
             String answer = item.path("answer").asText("").trim();
             if (!question.isEmpty() && !answer.isEmpty()) {
-                items.add(new FaqItem(question, answer));
+                items.add(new FaqItem(
+                        categoryL1.isEmpty() ? null : categoryL1,
+                        categoryL2.isEmpty() ? null : categoryL2,
+                        categoryL3.isEmpty() ? null : categoryL3,
+                        question,
+                        answer
+                ));
             }
         });
         return items;

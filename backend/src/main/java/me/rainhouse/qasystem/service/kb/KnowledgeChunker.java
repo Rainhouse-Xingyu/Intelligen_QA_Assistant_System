@@ -34,6 +34,9 @@ public class KnowledgeChunker {
             for (int i = 0; i < answerChunks.size(); i++) {
                 KbQaEntry entry = new KbQaEntry();
                 entry.setDocumentId(documentId);
+                entry.setCategoryL1Name(item.categoryL1());
+                entry.setCategoryL2Name(item.categoryL2());
+                entry.setCategoryL3Name(item.categoryL3());
                 entry.setQuestion(answerChunks.size() == 1 ? question : limit(question + "（第" + (i + 1) + "部分）", MAX_QUESTION_LENGTH));
                 entry.setAnswer(answerChunks.get(i));
                 entry.setStatus(1);

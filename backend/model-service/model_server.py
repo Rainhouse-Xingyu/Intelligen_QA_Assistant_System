@@ -136,10 +136,14 @@ class ChunkRequest(BaseModel):
     text: str
     title: str | None = None
     maxItems: int = 24
+    categoryPaths: list[str] = Field(default_factory=list)
 
 
 class ChunkItem(BaseModel):
     """单个 FAQ 知识片段"""
+    categoryL1: str | None = None
+    categoryL2: str | None = None
+    categoryL3: str | None = None
     question: str
     answer: str
 
@@ -518,6 +522,8 @@ def chunk_document(request: ChunkRequest) -> ChunkResponse:
         return ChunkResponse(items=[])
 
     max_items = max(1, min(request.maxItems, 40))
+    category_paths = [path.strip() for path in request.categoryPaths[:120] if path and path.strip()]
+    category_text = "\n".join(f"- {path}" for path in category_paths) if category_paths else "无可用候选分类"
     # 控制单次上下文，超长文档由 Java 侧分批调用或规则兜底处理。
     text = text[:12000]
     print(f"[API] /chunk 收到文档「{request.title or ''}」，长度 {len(text)}，最多 {max_items} 条")
@@ -535,7 +541,7 @@ def chunk_document(request: ChunkRequest) -> ChunkResponse:
                 "你是高校教务知识库的文档切片专家。你的任务是把原始文档切成可用于 RAG 检索的 FAQ 知识片段。\n"
                 "必须遵守：\n"
                 "1. 只输出 JSON 数组，不要 Markdown，不要解释，不要代码块。\n"
-                "2. 数组元素格式固定为 {\"question\":\"...\",\"answer\":\"...\"}。\n"
+                "2. 数组元素格式固定为 {\"categoryL1\":\"...\",\"categoryL2\":\"...\",\"categoryL3\":\"...\",\"question\":\"...\",\"answer\":\"...\"}。\n"
                 "3. 只能使用本次输入片段中的内容配对 question 和 answer，禁止跨标题、跨事项、跨段落借用其他内容。\n"
                 "4. question 的核心名词必须能在 answer 中找到对应依据；如果找不到明确答案，就不要输出该问题。\n"
                 "5. 一个片段只回答一个独立业务问题；不同业务主题、不同办理事项、不同对象条件必须拆开。\n"
@@ -546,6 +552,7 @@ def chunk_document(request: ChunkRequest) -> ChunkResponse:
                 "10. 表格内容按每行或每类事项整理成自然语言 FAQ；标题要与正文合并理解。\n"
                 "11. 去掉页眉页脚、目录、空泛介绍、重复标题和无意义编号。\n"
                 "12. 如果当前片段只是过渡文字、目录或没有可回答的政策事实，输出 []。\n"
+                "13. categoryL1/categoryL2/categoryL3 必须优先从用户给出的候选分类路径中完整选择，不能自造近义分类；无法判断时三个分类字段都输出空字符串。\n"
                 "反例：不要把“补考报名时间”的问题配到“缓考申请材料”的答案上；不要把上一节标题配到下一节正文上。\n"
             ),
         },
@@ -554,8 +561,10 @@ def chunk_document(request: ChunkRequest) -> ChunkResponse:
             "content": (
                 f"文档标题：{request.title or '未命名文档'}\n"
                 f"最多输出 {max_items} 条高质量 FAQ。\n\n"
+                "候选三级分类路径如下，每条格式为“一级分类 > 二级分类 > 三级分类”。如果某条 FAQ 能归类，请完整拆分到 categoryL1/categoryL2/categoryL3；如果不能确定，请留空：\n"
+                f"{category_text}\n\n"
                 "请只基于下面这一个片段做精准切片。先确认每个 question 都能被对应 answer 直接回答，再输出 JSON 数组：\n"
-                "[{\"question\":\"...\",\"answer\":\"...\"}]\n\n"
+                "[{\"categoryL1\":\"...\",\"categoryL2\":\"...\",\"categoryL3\":\"...\",\"question\":\"...\",\"answer\":\"...\"}]\n\n"
                 "当前片段：\n"
                 f"{text}"
             ),
@@ -571,10 +580,19 @@ def chunk_document(request: ChunkRequest) -> ChunkResponse:
     parsed_items = extract_json_array(raw)
     items: list[ChunkItem] = []
     for item in parsed_items[:max_items]:
+        category_l1 = str(item.get("categoryL1", "")).strip()
+        category_l2 = str(item.get("categoryL2", "")).strip()
+        category_l3 = str(item.get("categoryL3", "")).strip()
         question = str(item.get("question", "")).strip()
         answer = str(item.get("answer", "")).strip()
         if question and answer and len(question) <= 500 and len(answer) >= 20:
-            items.append(ChunkItem(question=question, answer=answer))
+            items.append(ChunkItem(
+                categoryL1=category_l1,
+                categoryL2=category_l2,
+                categoryL3=category_l3,
+                question=question,
+                answer=answer,
+            ))
     print(f"[API] /chunk 完成，输出 {len(items)} 条")
     return ChunkResponse(items=items)
 
