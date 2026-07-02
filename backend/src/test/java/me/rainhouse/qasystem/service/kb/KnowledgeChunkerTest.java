@@ -50,4 +50,20 @@ class KnowledgeChunkerTest {
         assertTrue(entries.stream().anyMatch(entry -> "报名时间的时间要求是什么？".equals(entry.getQuestion())));
         assertTrue(entries.stream().allMatch(entry -> entry.getAnswer().length() <= 900));
     }
+
+    @Test
+    void copiesModelCategoryNamesToEntry() {
+        List<KbQaEntry> entries = knowledgeChunker.chunk(
+                List.of(new FaqItem("考试", "校内考试", "缓考与缺考", "缓考怎么申请？", "学生应按学校通知提交缓考申请材料。")),
+                3L,
+                "tester",
+                "考试",
+                "PDF"
+        );
+
+        assertEquals(1, entries.size());
+        assertEquals("考试", entries.get(0).getCategoryL1Name());
+        assertEquals("校内考试", entries.get(0).getCategoryL2Name());
+        assertEquals("缓考与缺考", entries.get(0).getCategoryL3Name());
+    }
 }
