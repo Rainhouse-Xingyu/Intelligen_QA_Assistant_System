@@ -128,6 +128,16 @@ class GenerateResponse(BaseModel):
     answer: str
 
 
+class PsychologicalRequest(BaseModel):
+    """心理指导请求"""
+    studentMsg: str
+
+
+class PsychologicalResponse(BaseModel):
+    """心理指导响应"""
+    answer: str
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     """健康检查接口"""
@@ -394,3 +404,31 @@ def generate(request: GenerateRequest) -> GenerateResponse:
     answer = chat_generate(tokenizer, model, messages, max_new_tokens=384)
     print(f"[API] /generate 完成，输出 {len(answer)} 字")
     return GenerateResponse(answer=answer)
+
+
+@app.post("/psychological", response_model=PsychologicalResponse)
+def psychological(request: PsychologicalRequest) -> PsychologicalResponse:
+    """心理指导 —— 使用生成模型给出轻松、支持性的陪伴回复"""
+    print(f"[API] /psychological 收到心理指导请求「{request.studentMsg[:50]}...」")
+    tokenizer, model = generator_bundle()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是高校里的温暖心理支持助手。请用轻松、亲切、像学长学姐一样的语气回应，"
+                "先共情，再给2到4条具体可执行的小建议。不要诊断疾病，不要夸大问题。"
+                "如果用户表达自伤、自杀、伤害他人或极端危险，请温和但明确地建议立刻联系辅导员、"
+                "学校心理咨询中心、家人朋友或当地紧急救助。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"学生说：{request.studentMsg}\n\n"
+                "请回复得自然一点，不要像公告，不要使用教务政策话术。"
+            ),
+        },
+    ]
+    answer = chat_generate(tokenizer, model, messages, max_new_tokens=256)
+    print(f"[API] /psychological 完成，输出 {len(answer)} 字")
+    return PsychologicalResponse(answer=answer)

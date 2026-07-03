@@ -56,9 +56,9 @@ export default {
 
     const loadSuggestedQuestions = async () => {
       try {
-        const data = await apiGet('/api/chat/suggested-questions')
+        const data = await apiGet('/api/chat/suggested-questions', { limit: 3 })
         suggestedQuestions.value = Array.isArray(data)
-          ? data.map(normalizeSuggestedQuestion).filter(item => item.questionText)
+          ? data.map(normalizeSuggestedQuestion).filter(item => item.questionText).slice(0, 3)
           : []
       } catch (e) {
         console.warn('加载常见问题失败', e)
@@ -96,23 +96,19 @@ export default {
 
     const handleSuggestedQuestion = async (item) => {
       const questionText = item.questionText || item.question_text || item.name || ''
-      const answerText = item.answerText || item.answer_text || item.answer || ''
       if (!questionText || isLoading.value) return
-
-      if (!answerText) {
-        chatInput.value = questionText
-        await sendMessage(false)
-        return
-      }
-
-      messages.value.push({ type: 'user', content: questionText })
-      messages.value.push({ type: 'bot', content: answerText })
-      scrollToBottom()
+      chatInput.value = questionText
+      await sendMessage(false, item.moduleType || item.module_type || '')
     }
 
-    const sendMessage = async (isInitial = false) => {
+    const formatDuration = (durationMs) => {
+      const seconds = Math.max(0, Number(durationMs || 0) / 1000)
+      return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} 秒`
+    }
+
+    const sendMessage = async (isInitial = false, forcedCategory = '') => {
       let textToSend = chatInput.value
-      let categoryToSend = null
+      let categoryToSend = forcedCategory || null
       
       if (isInitial) {
         textToSend = props.initialQuestion
@@ -134,19 +130,26 @@ export default {
       
       isLoading.value = true
       scrollToBottom()
+      const requestStartedAt = Date.now()
 
       try {
-        const data = await apiForm('/api/chat/text', {
+        const data = await apiForm('/api/chat/text-detail', {
           query: userText,
           moduleType: categoryToSend
         })
+        const durationMs = data?.responseTimeMs ?? (Date.now() - requestStartedAt)
         messages.value.push({
           type: 'bot',
-          content: data || '暂时没有找到和这个问题匹配的答案，我已经记录下来，后续会继续完善知识库。'
+          content: data?.answer || '暂时没有找到和这个问题匹配的答案，我已经记录下来，后续会继续完善知识库。',
+          durationMs
         })
       } catch (e) {
         console.error(e)
-        messages.value.push({ type: 'bot', content: e.message || '网络错误，请稍后再试。' })
+        messages.value.push({
+          type: 'bot',
+          content: e.message || '网络错误，请稍后再试。',
+          durationMs: Date.now() - requestStartedAt
+        })
       } finally {
         isLoading.value = false
         scrollToBottom()
@@ -169,6 +172,7 @@ export default {
       goHome,
       handleChatEnter,
       formatContent,
+      formatDuration,
       handleSuggestedQuestion,
       sendMessage
     }

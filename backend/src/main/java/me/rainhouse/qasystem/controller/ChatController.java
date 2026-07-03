@@ -11,13 +11,10 @@ import me.rainhouse.qasystem.service.AudioService;
 import me.rainhouse.qasystem.service.BizContactService;
 import me.rainhouse.qasystem.service.ChatMessageService;
 import me.rainhouse.qasystem.service.ChatSessionService;
-import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.StatHotQuestionService;
 import me.rainhouse.qasystem.service.UnrecognizedQueryService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.websocket.ChatWebSocketServer;
-import me.rainhouse.qasystem.entity.StudentProfile;
-import me.rainhouse.qasystem.mapper.StudentProfileMapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -35,9 +32,6 @@ import java.util.concurrent.CompletableFuture;
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
-
-    @Autowired
-    private CozeService cozeService;
 
     @Autowired
     private AiChatService aiChatService;
@@ -61,7 +55,7 @@ public class ChatController {
     private UnrecognizedQueryService unrecognizedQueryService;
 
     @Autowired
-    private StudentProfileMapper studentProfileMapper;
+    private LocalModelClient localModelClient;
 
     // 从请求 attributes 中获取 userId (由 AuthInterceptor 解析 JWT 后放入)
     private Long getUserIdOpt(HttpServletRequest request) {
@@ -121,6 +115,46 @@ public class ChatController {
         updateAnswerSource(session.getId(), aiChatResponse.getAnswerSource());
 
         return Result.success(aiAnswer);
+    }
+
+    @PostMapping("/text-detail")
+    public Result<AiChatResponse> sendTextDetail(@RequestParam("query") String query,
+                                                 @RequestParam(value = "moduleType", required = false) String moduleType,
+                                                 HttpServletRequest request) {
+        if (!CasualConversationUtils.isCasualOnly(query)) {
+            statHotQuestionService.recordQuestion(query);
+        }
+
+        Long userId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
+        if (session.getStatus() == 1) {
+            saveMessage(session.getId(), 1, 1, query, null);
+            String wsAdminMsg = String.format("{\"type\":\"USER_MSG\", \"sessionId\":%d, \"userId\":%d, \"content\":\"%s\"}", session.getId(), userId, query.replace("\"", "\\\""));
+            if (session.getAdminId() != null) {
+                ChatWebSocketServer.sendMessageToAdmin(String.valueOf(session.getAdminId()), wsAdminMsg);
+            }
+            AiChatResponse response = AiChatResponse.builder()
+                    .originalQuestion(query)
+                    .rewriteQuestion(query)
+                    .moduleType(moduleType)
+                    .hitStatus(0)
+                    .hitLabel("转人工")
+                    .topScore(0.0)
+                    .answer("消息已转交人工客服")
+                    .answerSource("HUMAN_TRANSFER")
+                    .responseTimeMs(0L)
+                    .references(List.of())
+                    .build();
+            return Result.success(response);
+        }
+
+        saveMessage(session.getId(), 1, 1, query, null);
+        AiChatResponse response = aiChatService.chat(userId, session.getId(), query, moduleType);
+        String aiAnswer = bizContactService.appendContactInfoIfMatch(query, response.getAnswer());
+        response.setAnswer(aiAnswer);
+        saveMessage(session.getId(), 2, 1, aiAnswer, null);
+        updateAnswerSource(session.getId(), response.getAnswerSource());
+        return Result.success(response);
     }
 
     /**
@@ -221,7 +255,7 @@ public class ChatController {
     }
 
     /**
-     * 调用 Psychological_Counseling 工作流，接收 reply_text 与 stress_level 输出。
+     * 心理指导：使用本地生成模型输出轻松、安抚型回复，不再依赖 Coze 工作流。
      */
     @PostMapping("/psychological")
     public Result<String> psychologicalCounseling(@RequestParam("studentMsg") String studentMsg,
@@ -230,16 +264,14 @@ public class ChatController {
         ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
 
         saveMessage(session.getId(), 1, 1, studentMsg, null);
-
-        QueryWrapper<StudentProfile> pqw = new QueryWrapper<>();
-        pqw.eq("user_id", userId);
-        StudentProfile profile = studentProfileMapper.selectOne(pqw);
-        String studentIdForCoze = profile != null && profile.getMaskingId() != null
-                ? profile.getMaskingId()
-                : String.valueOf(userId);
-
-        String aiAnswer = cozeService.psychologicalCounseling(studentIdForCoze, studentMsg);
+        String aiAnswer;
+        try {
+            aiAnswer = localModelClient.psychologicalCounseling(studentMsg);
+        } catch (Exception ex) {
+            aiAnswer = LocalModelClient.superFallbackPsychologicalCounseling(studentMsg);
+        }
         saveMessage(session.getId(), 2, 1, aiAnswer, null);
+        updateAnswerSource(session.getId(), "LOCAL_MODEL_PSYCHOLOGY");
 
         return Result.success(aiAnswer);
     }
@@ -375,8 +407,15 @@ public class ChatController {
      * 适合在用户初次打开对话窗口时拉取，作为快速点击的 Suggestion 气泡
      */
     @GetMapping("/suggested-questions")
-    public Result<List<Map<String, Object>>> getSuggestedQuestions() {
-        return Result.success(statHotQuestionService.getSuggestedQuestionAnswers(7));
+    public Result<List<Map<String, Object>>> getSuggestedQuestions(
+            @RequestParam(defaultValue = "3") int limit) {
+        return Result.success(statHotQuestionService.getHotQuestions(30, limit));
+    }
+
+    @GetMapping("/common-questions")
+    public Result<List<Map<String, Object>>> getCommonQuestions(
+            @RequestParam(defaultValue = "5") int limit) {
+        return Result.success(statHotQuestionService.getRandomQuestionAnswers(limit));
     }
 
     /**

@@ -31,6 +31,11 @@ public interface StatHotQuestionService extends IService<StatHotQuestion> {
     List<Map<String, Object>> getSuggestedQuestionAnswers(int limit);
 
     /**
+     * 从知识库启用问答中随机取常见问题，供首页展示。
+     */
+    List<Map<String, Object>> getRandomQuestionAnswers(int limit);
+
+    /**
      * 重建指定日期的常见问题统计。
      *
      * @param statDate 统计日期

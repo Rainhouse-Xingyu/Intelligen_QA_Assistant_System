@@ -39,8 +39,8 @@
     </nav>
 
     <!-- Logged in as student: sidebar + main content -->
-    <div v-if="isLoggedIn && isStudent" style="display: flex; flex: 1; min-height: 0;">
-      <aside class="admin-sidebar">
+    <div v-if="isLoggedIn && isStudent" class="student-home-layout">
+      <aside class="admin-sidebar home-history-sidebar">
         <div class="admin-brand">
           <div class="brand-mark">
             <svg viewBox="0 0 24 24" class="icon">
@@ -73,7 +73,7 @@
           问卷调查
           <span v-if="hasPendingSurvey" class="survey-alert-dot"></span>
         </button>
-        <nav class="admin-nav">
+        <nav class="admin-nav home-history-list">
           <a
             v-for="conv in conversations"
             :key="conv.id"
@@ -84,6 +84,13 @@
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
             <span>{{ conv.title }}</span>
+            <button class="history-delete-btn" title="删除历史对话" @click.stop.prevent="deleteConversation(conv.id)">
+              <svg viewBox="0 0 24 24" class="icon">
+                <path d="M3 6h18"></path>
+                <path d="M8 6V4h8v2"></path>
+                <path d="M19 6l-1 14H6L5 6"></path>
+              </svg>
+            </button>
           </a>
           <div v-if="conversations.length === 0" class="empty">暂无历史对话</div>
         </nav>
@@ -92,7 +99,7 @@
 
       <main class="home-main">
         <h1 class="main-title">你好，今天想聊点什么？</h1>
-        <p class="sub-title">选择一个方向，然后把问题告诉我</p>
+        <p class="sub-title">可以直接输入问题，分类只是可选筛选</p>
 
         <div class="search-box-container">
            <textarea
@@ -107,7 +114,7 @@
                   v-for="cat in categories"
                   :key="cat.value"
                   :class="['category-btn', { active: selectedCategory === cat.value }]"
-                  @click="selectedCategory = cat.value"
+                  @click="toggleCategory(cat.value)"
                 >{{ cat.label }}</button>
              </div>
              <button class="send-btn" @click="handleSendFromHome">
@@ -118,13 +125,31 @@
              </button>
            </div>
         </div>
+
+        <section v-if="commonQuestions.length" class="common-question-panel">
+          <div class="common-panel-head">
+            <h2>常见问题</h2>
+            <button class="refresh-common-btn" @click="loadCommonQuestions">换一批</button>
+          </div>
+          <div class="common-question-grid">
+            <button
+              v-for="(item, index) in commonQuestions"
+              :key="item.id || item.questionText || index"
+              class="common-question-card"
+              @click="handleCommonQuestion(item)"
+            >
+              <span>{{ index + 1 }}</span>
+              <strong>{{ item.questionText }}</strong>
+            </button>
+          </div>
+        </section>
       </main>
     </div>
 
     <!-- Not logged in: just main content -->
     <main v-else class="home-main">
       <h1 class="main-title">你好，今天想聊点什么？</h1>
-      <p class="sub-title">选择一个方向，然后把问题告诉我</p>
+      <p class="sub-title">可以直接输入问题，分类只是可选筛选</p>
 
       <div class="search-box-container">
          <textarea
@@ -139,7 +164,7 @@
                 v-for="cat in categories"
                 :key="cat.value"
                 :class="['category-btn', { active: selectedCategory === cat.value }]"
-                @click="selectedCategory = cat.value"
+                @click="toggleCategory(cat.value)"
               >{{ cat.label }}</button>
            </div>
            <button class="send-btn" @click="handleSendFromHome">
@@ -150,6 +175,24 @@
            </button>
          </div>
       </div>
+
+      <section v-if="commonQuestions.length" class="common-question-panel">
+        <div class="common-panel-head">
+          <h2>常见问题</h2>
+          <button class="refresh-common-btn" @click="loadCommonQuestions">换一批</button>
+        </div>
+        <div class="common-question-grid">
+          <button
+            v-for="(item, index) in commonQuestions"
+            :key="item.id || item.questionText || index"
+            class="common-question-card"
+            @click="handleCommonQuestion(item)"
+          >
+            <span>{{ index + 1 }}</span>
+            <strong>{{ item.questionText }}</strong>
+          </button>
+        </div>
+      </section>
     </main>
   </div>
 </template>

@@ -97,6 +97,18 @@ public class LocalModelClientImpl implements LocalModelClient {
     }
 
     @Override
+    public String psychologicalCounseling(String studentMsg) {
+        if (!enabled()) {
+            return LocalModelClient.super.psychologicalCounseling(studentMsg);
+        }
+        String answer = post("/psychological", Map.of("studentMsg", studentMsg == null ? "" : studentMsg))
+                .path("answer")
+                .asText("");
+        answer = AiTextSanitizer.stripThinking(answer);
+        return answer.isBlank() ? LocalModelClient.super.psychologicalCounseling(studentMsg) : answer;
+    }
+
+    @Override
     public List<FaqItem> chunkToFaq(String text, String title, int maxItems) {
         return chunkToFaq(text, title, maxItems, List.of());
     }

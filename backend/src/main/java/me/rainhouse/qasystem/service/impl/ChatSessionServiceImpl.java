@@ -14,10 +14,11 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
     @Override
     public ChatSession getOrCreateActiveSession(Long userId) {
-        // 查询该用户最新的一条会话且状态为0或1的（未结束）
+        // 查询该用户最近30天内最新的一条会话且状态为0或1的（未结束）
         QueryWrapper<ChatSession> qw = new QueryWrapper<>();
         qw.eq("user_id", userId)
           .ne("status", 2)
+          .ge("updated_at", LocalDateTime.now().minusDays(30))
           .orderByDesc("created_at")
           .last("LIMIT 1");
 

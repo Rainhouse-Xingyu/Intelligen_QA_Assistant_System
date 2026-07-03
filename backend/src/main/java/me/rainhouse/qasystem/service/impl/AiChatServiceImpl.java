@@ -8,11 +8,11 @@ import me.rainhouse.qasystem.mapper.QuestionRawMapper;
 import me.rainhouse.qasystem.service.AiChatService;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
 import me.rainhouse.qasystem.service.ChatMemoryService;
-import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.IntentClassifierService;
 import me.rainhouse.qasystem.service.QueryRewriteService;
 import me.rainhouse.qasystem.service.UnrecognizedQueryService;
 import me.rainhouse.qasystem.service.VectorSearchService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.stereotype.Service;
@@ -34,7 +34,7 @@ public class AiChatServiceImpl implements AiChatService {
     private final IntentClassifierService intentClassifierService;
     private final VectorSearchService vectorSearchService;
     private final AnswerGeneratorService answerGeneratorService;
-    private final CozeService cozeService;
+    private final LocalModelClient localModelClient;
     private final UnrecognizedQueryService unrecognizedQueryService;
     private final ChatMemoryService chatMemoryService;
 
@@ -43,7 +43,7 @@ public class AiChatServiceImpl implements AiChatService {
                              IntentClassifierService intentClassifierService,
                              VectorSearchService vectorSearchService,
                              AnswerGeneratorService answerGeneratorService,
-                             CozeService cozeService,
+                             LocalModelClient localModelClient,
                              UnrecognizedQueryService unrecognizedQueryService,
                              ChatMemoryService chatMemoryService) {
         this.questionRawMapper = questionRawMapper;
@@ -51,7 +51,7 @@ public class AiChatServiceImpl implements AiChatService {
         this.intentClassifierService = intentClassifierService;
         this.vectorSearchService = vectorSearchService;
         this.answerGeneratorService = answerGeneratorService;
-        this.cozeService = cozeService;
+        this.localModelClient = localModelClient;
         this.unrecognizedQueryService = unrecognizedQueryService;
         this.chatMemoryService = chatMemoryService;
     }
@@ -83,6 +83,22 @@ public class AiChatServiceImpl implements AiChatService {
         String retrievalQuestion = chatMemoryService.buildRetrievalQuery(rewriteQuestion, memoryContext);
         String moduleType = intentClassifierService.classify(retrievalQuestion, selectedModuleType);
         saveRawQuestion(userId, sessionId, query, moduleType);
+
+        if ("心理辅导".equals(moduleType)) {
+            String answer = generatePsychologicalAnswer(query);
+            return AiChatResponse.builder()
+                    .originalQuestion(query)
+                    .rewriteQuestion(rewriteQuestion)
+                    .moduleType(moduleType)
+                    .hitStatus(1)
+                    .hitLabel("心理指导")
+                    .topScore(1.0)
+                    .answer(answer)
+                    .answerSource("LOCAL_MODEL_PSYCHOLOGY")
+                    .responseTimeMs(System.currentTimeMillis() - start)
+                    .references(List.of())
+                    .build();
+        }
 
         VectorSearchResponse searchResponse = vectorSearchService.search(retrievalQuestion, moduleType, 3, userId, sessionId);
         String answer = answerGeneratorService.generate(query, rewriteQuestion, searchResponse, memoryContext);
@@ -131,6 +147,18 @@ public class AiChatServiceImpl implements AiChatService {
                 .filter(StringUtils::hasText)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private String generatePsychologicalAnswer(String query) {
+        try {
+            String answer = localModelClient.psychologicalCounseling(query);
+            if (StringUtils.hasText(answer)) {
+                return answer;
+            }
+        } catch (Exception ex) {
+            log.warn("[AI] local psychological counseling failed, fallback to canned reply: {}", ex.getMessage());
+        }
+        return LocalModelClient.superFallbackPsychologicalCounseling(query);
     }
 
     private boolean isEchoAnswer(String query, String answer) {

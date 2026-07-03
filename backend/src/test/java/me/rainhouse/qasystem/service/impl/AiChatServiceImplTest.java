@@ -5,11 +5,11 @@ import me.rainhouse.qasystem.entity.QuestionRaw;
 import me.rainhouse.qasystem.mapper.QuestionRawMapper;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
 import me.rainhouse.qasystem.service.ChatMemoryService;
-import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.IntentClassifierService;
 import me.rainhouse.qasystem.service.QueryRewriteService;
 import me.rainhouse.qasystem.service.UnrecognizedQueryService;
 import me.rainhouse.qasystem.service.VectorSearchService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.junit.jupiter.api.Test;
@@ -44,7 +44,7 @@ class AiChatServiceImplTest {
                 classifierService,
                 vectorSearchService,
                 answerGeneratorService,
-                mock(CozeService.class),
+                fixedPsychModel(),
                 unrecognizedQueryService,
                 chatMemoryService
         );
@@ -74,7 +74,7 @@ class AiChatServiceImplTest {
                 classifierService,
                 vectorSearchService,
                 answerGeneratorService,
-                mock(CozeService.class),
+                fixedPsychModel(),
                 mock(UnrecognizedQueryService.class),
                 chatMemoryService
         );
@@ -107,7 +107,7 @@ class AiChatServiceImplTest {
                 classifierService,
                 vectorSearchService,
                 answerGeneratorService,
-                mock(CozeService.class),
+                fixedPsychModel(),
                 mock(UnrecognizedQueryService.class),
                 chatMemoryService
         );
@@ -119,6 +119,34 @@ class AiChatServiceImplTest {
                 您所咨询的问题解答如下：选课安排以教务部通知为准。谢谢！
 
                 以上答复含有AI解读成分，如有未尽事宜或其他问题，请具体咨询教务部联系人https://jw.neusoft.edu.cn/25565/""", response.getAnswer());
+    }
+
+    @Test
+    void psychologicalModuleUsesLocalModelWithoutPolicyTemplate() {
+        QuestionRawMapper questionRawMapper = mock(QuestionRawMapper.class);
+        QueryRewriteService rewriteService = query -> query;
+        IntentClassifierService classifierService = (query, selectedModule) -> "心理辅导";
+        VectorSearchService vectorSearchService = mock(VectorSearchService.class);
+        AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
+        ChatMemoryService chatMemoryService = noMemory();
+        when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
+
+        AiChatServiceImpl service = new AiChatServiceImpl(
+                questionRawMapper,
+                rewriteService,
+                classifierService,
+                vectorSearchService,
+                answerGeneratorService,
+                fixedPsychModel(),
+                mock(UnrecognizedQueryService.class),
+                chatMemoryService
+        );
+
+        AiChatResponse response = service.chat(1L, 1L, "最近有点焦虑", null);
+
+        assertEquals("LOCAL_MODEL_PSYCHOLOGY", response.getAnswerSource());
+        assertEquals("别急，我们先把事情拆小一点。", response.getAnswer());
+        assertFalse(response.getAnswer().contains("您所咨询的问题解答如下"));
     }
 
     private static ChatMemoryService noMemory() {
@@ -136,6 +164,45 @@ class AiChatServiceImplTest {
             @Override
             public String buildGenerationQuestion(String originalQuestion, String memoryContext) {
                 return originalQuestion;
+            }
+        };
+    }
+
+    private static LocalModelClient fixedPsychModel() {
+        return new LocalModelClient() {
+            @Override
+            public float[] embed(String text) {
+                return new float[0];
+            }
+
+            @Override
+            public List<Double> rerank(String query, List<String> documents) {
+                return List.of();
+            }
+
+            @Override
+            public String rewrite(String query) {
+                return query;
+            }
+
+            @Override
+            public String classify(String query, List<String> candidateModules) {
+                return "";
+            }
+
+            @Override
+            public String generate(String originalQuestion, String rewriteQuestion, List<VectorSearchResult> references) {
+                return "";
+            }
+
+            @Override
+            public String psychologicalCounseling(String studentMsg) {
+                return "别急，我们先把事情拆小一点。";
+            }
+
+            @Override
+            public boolean enabled() {
+                return true;
             }
         };
     }

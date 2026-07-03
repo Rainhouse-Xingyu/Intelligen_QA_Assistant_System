@@ -22,7 +22,7 @@
          <div v-if="suggestedQuestions.length" class="message bot-message">
            <div class="msg-avatar">✨</div>
            <div class="msg-bubble faq-bubble">
-             <div class="faq-title">常见问题</div>
+             <div class="faq-title">热门问题</div>
              <div class="faq-list">
                <button
                  v-for="(item, index) in suggestedQuestions"
@@ -32,6 +32,7 @@
                >
                  <span class="faq-index">{{ index + 1 }}</span>
                  <span>{{ item.questionText }}</span>
+                 <em v-if="item.value">点击 {{ item.value }}</em>
                </button>
              </div>
            </div>
@@ -39,7 +40,7 @@
          <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.type === 'user' ? 'user-message' : 'bot-message']">
             <div v-if="msg.type === 'bot'" class="msg-avatar">✨</div>
             <div v-if="msg.kind === 'faq'" class="msg-bubble faq-bubble">
-              <div class="faq-title">常见问题</div>
+              <div class="faq-title">热门问题</div>
               <div class="faq-list">
                 <button
                   v-for="(item, faqIndex) in msg.items"
@@ -49,17 +50,23 @@
                 >
                   <span class="faq-index">{{ faqIndex + 1 }}</span>
                   <span>{{ item.questionText }}</span>
+                  <em v-if="item.value">点击 {{ item.value }}</em>
                 </button>
               </div>
             </div>
-            <div v-else class="msg-bubble" v-html="formatContent(msg.content)"></div>
+            <div v-else class="msg-bubble">
+              <div v-html="formatContent(msg.content)"></div>
+              <div v-if="msg.type === 'bot' && msg.durationMs !== undefined" class="msg-duration">
+                已处理 {{ formatDuration(msg.durationMs) }}
+              </div>
+            </div>
          </div>
          
          <!-- Loading indicator -->
          <div v-if="isLoading" class="message bot-message">
            <div class="msg-avatar">✨</div>
-           <div class="msg-bubble typing-indicator">
-             <span></span><span></span><span></span>
+           <div class="msg-bubble thinking-indicator">
+             <span>正在思考</span>
            </div>
          </div>
       </div>

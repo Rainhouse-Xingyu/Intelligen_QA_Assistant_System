@@ -1,6 +1,9 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiGet, apiForm } from './adminApi'
 
+const HISTORY_RETENTION_DAYS = 30
+const HISTORY_RETENTION_MS = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000
+
 export default {
   name: 'Home',
   emits: ['start-chat', 'navigate-login', 'navigate-survey'],
@@ -10,6 +13,7 @@ export default {
     const shakeAlert = ref(false)
     const logoRef = ref(null)
     const logoTone = ref('logo--dark')
+    const commonQuestions = ref([])
     const categories = [
       { label: '考务', value: '考务通知' },
       { label: '教学', value: '教学运行' },
@@ -89,7 +93,14 @@ export default {
     const loadConversations = () => {
       try {
         const stored = localStorage.getItem('chat_conversations')
-        conversations.value = stored ? JSON.parse(stored) : []
+        const parsed = stored ? JSON.parse(stored) : []
+        const now = Date.now()
+        conversations.value = (Array.isArray(parsed) ? parsed : [])
+          .filter(conv => {
+            const time = new Date(conv.createdAt || conv.updatedAt || 0).getTime()
+            return Number.isFinite(time) && now - time <= HISTORY_RETENTION_MS
+          })
+        saveConversations()
       } catch {
         conversations.value = []
       }
@@ -115,6 +126,34 @@ export default {
     const deleteConversation = (id) => {
       conversations.value = conversations.value.filter(c => c.id !== id)
       saveConversations()
+    }
+
+    const normalizeQuestionItem = (item) => ({
+      ...item,
+      questionText: item.questionText || item.question_text || item.name || item.question || '',
+      answerText: item.answerText || item.answer_text || item.answer || '',
+      moduleType: item.moduleType || item.module_type || ''
+    })
+
+    const loadCommonQuestions = async () => {
+      try {
+        const data = await apiGet('/api/chat/common-questions', { limit: 5 })
+        commonQuestions.value = Array.isArray(data)
+          ? data.map(normalizeQuestionItem).filter(item => item.questionText).slice(0, 5)
+          : []
+      } catch {
+        commonQuestions.value = []
+      }
+    }
+
+    const handleCommonQuestion = (item) => {
+      const normalized = normalizeQuestionItem(item)
+      if (!normalized.questionText) return
+      question.value = normalized.questionText
+      if (normalized.moduleType) {
+        selectedCategory.value = normalized.moduleType
+      }
+      handleSendFromHome()
     }
 
     // --- Auth methods ---
@@ -190,15 +229,12 @@ export default {
       emit('navigate-survey')
     }
 
+    const toggleCategory = (category) => {
+      selectedCategory.value = selectedCategory.value === category ? null : category
+    }
+
     const handleSendFromHome = () => {
       if (!question.value.trim()) return
-      if (!selectedCategory.value) {
-        shakeAlert.value = true
-        setTimeout(() => {
-          shakeAlert.value = false
-        }, 500)
-        return
-      }
 
       if (isLoggedIn.value) {
         const conv = {
@@ -232,6 +268,7 @@ export default {
 
     onMounted(() => {
       restoreSession()
+      loadCommonQuestions()
       nextTick(scheduleLogoToneUpdate)
       window.addEventListener('resize', scheduleLogoToneUpdate)
       window.addEventListener('scroll', scheduleLogoToneUpdate, true)
@@ -253,6 +290,7 @@ export default {
       shakeAlert,
       logoRef,
       logoTone,
+      commonQuestions,
       categories,
       isLoggedIn,
       userInfo,
@@ -263,6 +301,9 @@ export default {
       handleSendFromHome,
       handleLoginClick,
       handleSurveyClick,
+      toggleCategory,
+      loadCommonQuestions,
+      handleCommonQuestion,
       newConversation,
       selectConversation,
       deleteConversation

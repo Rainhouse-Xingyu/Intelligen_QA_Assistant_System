@@ -108,6 +108,25 @@ public class StatHotQuestionServiceImpl extends ServiceImpl<StatHotQuestionMappe
                 .toList();
     }
 
+    @Override
+    public List<Map<String, Object>> getRandomQuestionAnswers(int limit) {
+        int safeLimit = safeLimit(limit);
+        QueryWrapper<KbQaEntry> qw = new QueryWrapper<>();
+        qw.select("id",
+                  "question as questionText",
+                  "answer as answerText",
+                  "module_type as moduleType",
+                  "updated_at as lastHitTime")
+          .eq("status", 1)
+          .isNotNull("question")
+          .ne("question", "")
+          .isNotNull("answer")
+          .ne("answer", "")
+          .last("ORDER BY RAND() LIMIT " + safeLimit);
+
+        return kbQaEntryMapper.selectMaps(qw);
+    }
+
     private List<Map<String, Object>> listLatestStatQuestionAnswers(int limit) {
         QueryWrapper<StatHotQuestion> qw = new QueryWrapper<>();
         qw.select("id",
