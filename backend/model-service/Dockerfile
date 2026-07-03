@@ -12,7 +12,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY model_server.py start.sh ./
+COPY model_server.py setup_milvus.py start.sh ./
 RUN chmod +x start.sh
 
 EXPOSE 18080

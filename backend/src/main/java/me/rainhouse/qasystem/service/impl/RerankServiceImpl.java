@@ -29,7 +29,7 @@ public class RerankServiceImpl implements RerankService {
     public List<VectorSearchResult> rerank(String query, float[] queryVector, List<VectorDocument> candidates, int topK) {
         if (localModelClient.enabled()) {
             List<String> documents = candidates.stream()
-                    .map(candidate -> candidate.question() + "\n" + candidate.answer())
+                    .map(this::retrievalText)
                     .toList();
             List<Double> scores = localModelClient.rerank(query, documents);
             return java.util.stream.IntStream.range(0, candidates.size())
@@ -47,7 +47,7 @@ public class RerankServiceImpl implements RerankService {
 
     private VectorSearchResult toResult(String query, float[] queryVector, VectorDocument document, double rerankScore) {
         double vectorScore = cosine(queryVector, document.vector());
-        double lexicalScore = lexicalScore(query, document.question() + "\n" + document.answer());
+        double lexicalScore = lexicalScore(query, retrievalText(document));
         double normalizedRerankScore = Math.max(0.0, Math.min(1.0, rerankScore));
         double finalScore = Math.max(
                 normalizedRerankScore * 0.6 + vectorScore * 0.25 + lexicalScore * 0.15,
@@ -72,7 +72,7 @@ public class RerankServiceImpl implements RerankService {
 
     private VectorSearchResult toResult(String query, float[] queryVector, VectorDocument document) {
         double vectorScore = cosine(queryVector, document.vector());
-        double lexicalScore = lexicalScore(query, document.question() + "\n" + document.answer());
+        double lexicalScore = lexicalScore(query, retrievalText(document));
         double finalScore = Math.max(
                 vectorScore,
                 Math.max(vectorScore * 0.65 + lexicalScore * 0.35, lexicalScore * 0.8)
@@ -110,6 +110,16 @@ public class RerankServiceImpl implements RerankService {
             }
         }
         return Math.min(1.0, overlap / (double) queryTokens.size());
+    }
+
+    private String retrievalText(VectorDocument document) {
+        if (document == null) {
+            return "";
+        }
+        if (StringUtils.hasText(document.categoryPath())) {
+            return document.categoryPath() + "\n" + document.question();
+        }
+        return document.question();
     }
 
     private Set<String> tokenize(String text) {

@@ -107,10 +107,17 @@ services:
       PORT: 18080
       AIGE_MODEL_BASE: /opt/aige-models
       AIGE_MODEL_DEVICE: ${AIGE_MODEL_DEVICE:-cpu}
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      MILVUS_COLLECTION_NAME: ${MILVUS_COLLECTION_NAME:-knowledge_question_vector}
+      INIT_MILVUS_COLLECTION: ${INIT_MILVUS_COLLECTION:-true}
     volumes:
       - ${AIGE_MODEL_BASE_HOST:-/opt/aige-models}:/opt/aige-models:ro
     ports:
       - "${MODEL_SERVICE_PORT:-18080}:18080"
+    depends_on:
+      milvus:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=3).read()"]
       interval: 30s
@@ -133,6 +140,7 @@ services:
       REDIS_DATABASE: 0
       REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-redis-password}
       MILVUS_ENDPOINT: http://milvus:19530
+      MILVUS_COLLECTION_NAME: ${MILVUS_COLLECTION_NAME:-knowledge_question_vector}
       LOCAL_MODEL_SERVICE_URL: http://model-service:18080
       KNOWLEDGE_UPLOAD_DIR: /app/uploads/kb
       TTS_OUTPUT_DIR: /app/uploads/audio
