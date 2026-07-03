@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -31,19 +32,40 @@ public class IntentClassifierServiceImpl implements IntentClassifierService {
         if (StringUtils.hasText(userSelectedModule)) {
             return userSelectedModule.trim();
         }
+        String currentQuestion = extractCurrentQuestion(query);
+        String keywordModule = classifyByKeywords(currentQuestion);
+        if (StringUtils.hasText(keywordModule)) {
+            return keywordModule;
+        }
         if (localModelClient.enabled()) {
             String moduleType = localModelClient.classify(query, List.copyOf(moduleKeywords.keySet()));
             if (StringUtils.hasText(moduleType)) {
                 return moduleType;
             }
         }
-        String text = query == null ? "" : query.toLowerCase();
+        return classifyByKeywords(query);
+    }
+
+    private String extractCurrentQuestion(String query) {
+        if (!StringUtils.hasText(query)) {
+            return "";
+        }
+        String marker = "当前问题：";
+        int index = query.lastIndexOf(marker);
+        if (index >= 0) {
+            return query.substring(index + marker.length()).trim();
+        }
+        return query.trim();
+    }
+
+    private String classifyByKeywords(String query) {
+        String text = query == null ? "" : query.toLowerCase(Locale.ROOT);
         String bestModule = null;
         int bestScore = 0;
         for (Map.Entry<String, List<String>> entry : moduleKeywords.entrySet()) {
             int score = 0;
             for (String keyword : entry.getValue()) {
-                if (text.contains(keyword.toLowerCase())) {
+                if (text.contains(keyword.toLowerCase(Locale.ROOT))) {
                     score++;
                 }
             }

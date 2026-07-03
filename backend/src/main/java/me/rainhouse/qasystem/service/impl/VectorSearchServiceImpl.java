@@ -37,6 +37,13 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
     private static final int LEXICAL_CANDIDATE_LIMIT = 40;
     private static final int MAX_QUERY_TERMS = 12;
+    private static final Map<String, List<String>> MODULE_ALIASES = Map.of(
+            "考务通知", List.of("考务通知", "考务", "考试", "考试通知"),
+            "教学运行", List.of("教学运行", "教学", "课程", "选课", "课表"),
+            "学业帮扶", List.of("学业帮扶", "学业支持", "学业", "帮扶", "预警"),
+            "心理辅导", List.of("心理辅导", "心理", "心理咨询", "心理健康"),
+            "学籍事务", List.of("学籍事务", "学籍", "请假", "转专业")
+    );
 
     private final KbQaEntryService kbQaEntryService;
     private final EmbeddingService embeddingService;
@@ -85,7 +92,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             return;
         }
         String text = embeddingText(entry);
-        milvusClientManager.upsert(VectorDocument.from(entry, embeddingService.embed(text)));
+        milvusClientManager.upsert(toVectorDocument(entry, embeddingService.embed(text)));
     }
 
     @Override
@@ -96,7 +103,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         milvusClientManager.upsertBatch(entries.stream()
                 .filter(entry -> entry.getId() != null)
                 .filter(entry -> entry.getStatus() == null || entry.getStatus() == 1)
-                .map(entry -> VectorDocument.from(entry, embeddingService.embed(embeddingText(entry))))
+                .map(entry -> toVectorDocument(entry, embeddingService.embed(embeddingText(entry))))
                 .toList());
     }
 
@@ -115,15 +122,26 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
         int resultLimit = topK == null || topK <= 0 ? defaultTopResults : topK;
         float[] queryVector = embeddingService.embed(query);
-        List<VectorDocument> vectorCandidates = milvusClientManager.search(queryVector, moduleType, topCandidates);
-        List<VectorDocument> candidates = mergeCandidates(vectorCandidates, lexicalCandidates(query, moduleType));
-        List<VectorSearchResult> results = rerankService.rerank(query, queryVector, candidates, resultLimit);
-        //获取的是相似度最高的那个结果进行返回
+        List<VectorSearchResult> results = searchAndRerank(query, queryVector, moduleSearchTerms(moduleType), resultLimit);
         VectorSearchResult topResult = results.isEmpty() ? null : results.get(0);
+        HitDecision hitDecision = hitRuleEngine.decide(topResult == null ? 0.0 : topResult.finalScore());
+
+        if (hitDecision.hitStatus() == 0 && StringUtils.hasText(moduleType)) {
+            List<VectorSearchResult> fallbackResults = searchAndRerank(query, queryVector, List.of(), resultLimit);
+            VectorSearchResult fallbackTop = fallbackResults.isEmpty() ? null : fallbackResults.get(0);
+            HitDecision fallbackDecision = hitRuleEngine.decide(fallbackTop == null ? 0.0 : fallbackTop.finalScore());
+            if (fallbackTop != null && (topResult == null || fallbackTop.finalScore() > topResult.finalScore())) {
+                log.info("模块过滤检索未命中，使用全库兜底结果。moduleType={}, filteredScore={}, fallbackScore={}",
+                        moduleType,
+                        topResult == null ? 0.0 : topResult.finalScore(),
+                        fallbackTop.finalScore());
+                results = fallbackResults;
+                topResult = fallbackTop;
+                hitDecision = fallbackDecision;
+            }
+        }
 
         double topScore = topResult == null ? 0.0 : topResult.finalScore();
-        // 根据得分和预设的规则引擎判断命中类型 目前是0.7
-        HitDecision hitDecision = hitRuleEngine.decide(topScore);
         long responseTimeMs = System.currentTimeMillis() - start;
         saveHitRecord(query, moduleType, userId, sessionId, topResult, hitDecision, responseTimeMs);
 
@@ -138,6 +156,30 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 responseTimeMs,
                 results
         );
+    }
+
+    private List<VectorSearchResult> searchAndRerank(String query,
+                                                     float[] queryVector,
+                                                     List<String> moduleTerms,
+                                                     int resultLimit) {
+        List<VectorDocument> vectorCandidates = vectorCandidates(queryVector, moduleTerms);
+        List<VectorDocument> candidates = mergeCandidates(vectorCandidates, lexicalCandidates(query, moduleTerms));
+        return rerankService.rerank(query, queryVector, candidates, resultLimit);
+    }
+
+    private List<VectorDocument> vectorCandidates(float[] queryVector, List<String> moduleTerms) {
+        if (moduleTerms == null || moduleTerms.isEmpty()) {
+            return milvusClientManager.search(queryVector, null, topCandidates);
+        }
+        Map<Long, VectorDocument> merged = new LinkedHashMap<>();
+        for (String moduleTerm : moduleTerms) {
+            for (VectorDocument document : milvusClientManager.search(queryVector, moduleTerm, topCandidates)) {
+                if (document != null && document.knowledgeId() != null) {
+                    merged.putIfAbsent(document.knowledgeId(), document);
+                }
+            }
+        }
+        return new ArrayList<>(merged.values());
     }
 
     private void ensureIndexReady() {
@@ -163,7 +205,24 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 .collect(java.util.stream.Collectors.joining(" > "));
     }
 
-    private List<VectorDocument> lexicalCandidates(String query, String moduleType) {
+    private VectorDocument toVectorDocument(KbQaEntry entry, float[] vector) {
+        VectorDocument document = VectorDocument.from(entry, vector);
+        return new VectorDocument(
+                document.knowledgeId(),
+                document.question(),
+                document.answer(),
+                canonicalModule(entry.getModuleType(), entry.getCategoryL1Name(), entry.getCategoryL2Name(), entry.getCategoryL3Name()),
+                document.categoryL1Id(),
+                document.categoryL2Id(),
+                document.categoryL3Id(),
+                document.categoryPath(),
+                document.sourceType(),
+                document.sourceUrl(),
+                document.vector()
+        );
+    }
+
+    private List<VectorDocument> lexicalCandidates(String query, List<String> moduleTerms) {
         List<String> terms = extractQueryTerms(query);
         if (terms.isEmpty()) {
             return List.of();
@@ -172,15 +231,22 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         LambdaQueryWrapper<KbQaEntry> wrapper = new LambdaQueryWrapper<KbQaEntry>()
                 .eq(KbQaEntry::getStatus, 1)
                 .last("limit " + LEXICAL_CANDIDATE_LIMIT);
-        if (StringUtils.hasText(moduleType)) {
-            String trimmedModule = moduleType.trim();
-            wrapper.and(group -> group.eq(KbQaEntry::getModuleType, trimmedModule)
-                    .or()
-                    .eq(KbQaEntry::getCategoryL1Name, trimmedModule)
-                    .or()
-                    .eq(KbQaEntry::getCategoryL2Name, trimmedModule)
-                    .or()
-                    .eq(KbQaEntry::getCategoryL3Name, trimmedModule));
+        if (moduleTerms != null && !moduleTerms.isEmpty()) {
+            wrapper.and(group -> {
+                for (int i = 0; i < moduleTerms.size(); i++) {
+                    String moduleTerm = moduleTerms.get(i);
+                    if (i > 0) {
+                        group.or();
+                    }
+                    group.eq(KbQaEntry::getModuleType, moduleTerm)
+                            .or()
+                            .eq(KbQaEntry::getCategoryL1Name, moduleTerm)
+                            .or()
+                            .eq(KbQaEntry::getCategoryL2Name, moduleTerm)
+                            .or()
+                            .eq(KbQaEntry::getCategoryL3Name, moduleTerm);
+                }
+            });
         }
         wrapper.and(group -> {
             for (int i = 0; i < terms.size(); i++) {
@@ -195,8 +261,40 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         });
 
         return kbQaEntryService.list(wrapper).stream()
-                .map(entry -> VectorDocument.from(entry, null))
+                .map(entry -> toVectorDocument(entry, null))
                 .toList();
+    }
+
+    private List<String> moduleSearchTerms(String moduleType) {
+        if (!StringUtils.hasText(moduleType)) {
+            return List.of();
+        }
+        String canonical = canonicalModule(moduleType);
+        List<String> aliases = MODULE_ALIASES.getOrDefault(canonical, List.of(moduleType.trim()));
+        LinkedHashMap<String, Boolean> terms = new LinkedHashMap<>();
+        terms.put(moduleType.trim(), true);
+        terms.put(canonical, true);
+        aliases.forEach(alias -> terms.put(alias, true));
+        return terms.keySet().stream()
+                .filter(StringUtils::hasText)
+                .toList();
+    }
+
+    private String canonicalModule(String... values) {
+        for (String value : values) {
+            if (!StringUtils.hasText(value)) {
+                continue;
+            }
+            String normalized = value.trim();
+            for (Map.Entry<String, List<String>> entry : MODULE_ALIASES.entrySet()) {
+                if (entry.getKey().equals(normalized) || entry.getValue().contains(normalized)) {
+                    return entry.getKey();
+                }
+            }
+        }
+        return StringUtils.hasText(values != null && values.length > 0 ? values[0] : null)
+                ? values[0].trim()
+                : "通用知识库";
     }
 
     private List<VectorDocument> mergeCandidates(List<VectorDocument> vectorCandidates,

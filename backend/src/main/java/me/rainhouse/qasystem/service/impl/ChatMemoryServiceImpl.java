@@ -17,10 +17,21 @@ import java.util.Set;
 @Service
 public class ChatMemoryServiceImpl implements ChatMemoryService {
 
-    private static final Set<String> FOLLOW_UP_WORDS = Set.of(
+    private static final Set<String> CONTEXT_REFERENCE_WORDS = Set.of(
             "刚才", "上面", "之前", "前面", "这个", "那个", "这些", "那些",
-            "它", "他", "她", "其", "继续", "还有", "呢", "吗", "怎么",
-            "哪里", "多少", "时间", "截止", "条件", "流程", "材料", "要求"
+            "它", "他", "她", "其", "继续", "还有", "呢"
+    );
+
+    private static final Set<String> SHORT_FOLLOW_UP_WORDS = Set.of(
+            "吗", "怎么", "哪里", "多少", "时间", "截止", "条件", "流程", "材料", "要求"
+    );
+
+    private static final Set<String> DOMAIN_TOPIC_WORDS = Set.of(
+            "补考", "缓考", "考试", "线上考试", "线下考试", "考场", "准考证", "成绩", "四六级",
+            "选课", "退课", "补选", "课表", "调课", "重修", "学分", "培养方案",
+            "挂科", "绩点", "gpa", "学业预警", "帮扶", "困难", "留级", "毕业",
+            "请假", "销假", "休学", "复学", "转专业", "学籍", "证明",
+            "心理", "焦虑", "压力", "失眠", "咨询", "情绪"
     );
 
     private final ChatMessageMapper chatMessageMapper;
@@ -122,11 +133,21 @@ public class ChatMemoryServiceImpl implements ChatMemoryService {
 
     private boolean looksLikeFollowUp(String query) {
         String normalized = query.toLowerCase(Locale.ROOT);
-        if (normalized.length() <= 24) {
+        if (containsAny(normalized, CONTEXT_REFERENCE_WORDS)) {
             return true;
         }
-        for (String word : FOLLOW_UP_WORDS) {
-            if (normalized.contains(word)) {
+        if (containsAny(normalized, DOMAIN_TOPIC_WORDS)) {
+            return false;
+        }
+        return normalized.length() <= 12 || containsAny(normalized, SHORT_FOLLOW_UP_WORDS);
+    }
+
+    private boolean containsAny(String text, Set<String> words) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        for (String word : words) {
+            if (text.contains(word.toLowerCase(Locale.ROOT))) {
                 return true;
             }
         }
