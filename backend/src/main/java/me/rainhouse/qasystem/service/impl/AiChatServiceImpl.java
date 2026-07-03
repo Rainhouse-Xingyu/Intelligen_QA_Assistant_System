@@ -94,7 +94,7 @@ public class AiChatServiceImpl implements AiChatService {
                     .hitLabel("心理指导")
                     .topScore(1.0)
                     .answer(answer)
-                    .answerSource("LOCAL_MODEL_PSYCHOLOGY")
+                    .answerSource("LOCAL_PSY")
                     .responseTimeMs(System.currentTimeMillis() - start)
                     .references(List.of())
                     .build();

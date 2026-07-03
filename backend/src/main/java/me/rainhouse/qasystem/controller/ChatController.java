@@ -271,7 +271,7 @@ public class ChatController {
             aiAnswer = LocalModelClient.superFallbackPsychologicalCounseling(studentMsg);
         }
         saveMessage(session.getId(), 2, 1, aiAnswer, null);
-        updateAnswerSource(session.getId(), "LOCAL_MODEL_PSYCHOLOGY");
+        updateAnswerSource(session.getId(), "LOCAL_PSY");
 
         return Result.success(aiAnswer);
     }

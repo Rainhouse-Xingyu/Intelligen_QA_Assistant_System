@@ -144,7 +144,7 @@ class AiChatServiceImplTest {
 
         AiChatResponse response = service.chat(1L, 1L, "最近有点焦虑", null);
 
-        assertEquals("LOCAL_MODEL_PSYCHOLOGY", response.getAnswerSource());
+        assertEquals("LOCAL_PSY", response.getAnswerSource());
         assertEquals("别急，我们先把事情拆小一点。", response.getAnswer());
         assertFalse(response.getAnswer().contains("您所咨询的问题解答如下"));
     }
