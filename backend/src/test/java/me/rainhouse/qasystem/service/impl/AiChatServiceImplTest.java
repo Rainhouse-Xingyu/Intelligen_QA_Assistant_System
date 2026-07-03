@@ -1,0 +1,135 @@
+package me.rainhouse.qasystem.service.impl;
+
+import me.rainhouse.qasystem.common.dto.AiChatResponse;
+import me.rainhouse.qasystem.entity.QuestionRaw;
+import me.rainhouse.qasystem.mapper.QuestionRawMapper;
+import me.rainhouse.qasystem.service.AnswerGeneratorService;
+import me.rainhouse.qasystem.service.ChatMemoryService;
+import me.rainhouse.qasystem.service.CozeService;
+import me.rainhouse.qasystem.service.IntentClassifierService;
+import me.rainhouse.qasystem.service.QueryRewriteService;
+import me.rainhouse.qasystem.service.UnrecognizedQueryService;
+import me.rainhouse.qasystem.service.VectorSearchService;
+import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
+import me.rainhouse.qasystem.service.vector.VectorSearchResult;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class AiChatServiceImplTest {
+
+    @Test
+    void unmatchedSearchDoesNotFallbackToTopKnowledgeAnswer() {
+        QuestionRawMapper questionRawMapper = mock(QuestionRawMapper.class);
+        QueryRewriteService rewriteService = query -> query + "？";
+        IntentClassifierService classifierService = (query, selectedModule) -> "考务通知";
+        VectorSearchService vectorSearchService = mock(VectorSearchService.class);
+        AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
+        UnrecognizedQueryService unrecognizedQueryService = mock(UnrecognizedQueryService.class);
+        ChatMemoryService chatMemoryService = noMemory();
+        when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
+        when(vectorSearchService.search(any(), any(), any(), any(), any())).thenReturn(searchResponse(0, 0.31));
+        when(answerGeneratorService.generate(any(), any(), any(), any())).thenReturn(null);
+
+        AiChatServiceImpl service = new AiChatServiceImpl(
+                questionRawMapper,
+                rewriteService,
+                classifierService,
+                vectorSearchService,
+                answerGeneratorService,
+                mock(CozeService.class),
+                unrecognizedQueryService,
+                chatMemoryService
+        );
+
+        AiChatResponse response = service.chat(1L, 1L, "随便问一个知识库没有的问题", null);
+
+        assertEquals("NO_ANSWER_FALLBACK", response.getAnswerSource());
+        assertFalse(response.getAnswer().contains("线上监考"));
+        verify(unrecognizedQueryService).recordUnrecognized(1L, "随便问一个知识库没有的问题", "考务通知", 0.31);
+    }
+
+    @Test
+    void hitSearchCanFallbackToTopKnowledgeAnswerWhenGeneratorReturnsEmpty() {
+        QuestionRawMapper questionRawMapper = mock(QuestionRawMapper.class);
+        QueryRewriteService rewriteService = query -> query + "？";
+        IntentClassifierService classifierService = (query, selectedModule) -> "考务通知";
+        VectorSearchService vectorSearchService = mock(VectorSearchService.class);
+        AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
+        ChatMemoryService chatMemoryService = noMemory();
+        when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
+        when(vectorSearchService.search(any(), any(), any(), any(), any())).thenReturn(searchResponse(1, 0.62));
+        when(answerGeneratorService.generate(any(), any(), any(), any())).thenReturn(null);
+
+        AiChatServiceImpl service = new AiChatServiceImpl(
+                questionRawMapper,
+                rewriteService,
+                classifierService,
+                vectorSearchService,
+                answerGeneratorService,
+                mock(CozeService.class),
+                mock(UnrecognizedQueryService.class),
+                chatMemoryService
+        );
+
+        AiChatResponse response = service.chat(1L, 1L, "线上考试要求", null);
+
+        assertEquals("RAG", response.getAnswerSource());
+        assertEquals("线上监考文章内容", response.getAnswer());
+    }
+
+    private static ChatMemoryService noMemory() {
+        return new ChatMemoryService() {
+            @Override
+            public String buildRecentContext(Long sessionId, String currentQuery) {
+                return "";
+            }
+
+            @Override
+            public String buildRetrievalQuery(String query, String memoryContext) {
+                return query;
+            }
+
+            @Override
+            public String buildGenerationQuestion(String originalQuestion, String memoryContext) {
+                return originalQuestion;
+            }
+        };
+    }
+
+    private static VectorSearchResponse searchResponse(Integer hitStatus, double topScore) {
+        VectorSearchResult result = new VectorSearchResult(
+                100L,
+                "线上监考",
+                "线上监考文章内容",
+                "考务通知",
+                null,
+                null,
+                null,
+                "考务通知 > 考试",
+                null,
+                null,
+                topScore,
+                topScore,
+                topScore
+        );
+        return new VectorSearchResponse(
+                "query",
+                "考务通知",
+                hitStatus,
+                hitStatus == null || hitStatus == 0 ? "未命中" : "弱命中",
+                topScore,
+                100L,
+                hitStatus == null || hitStatus == 0 ? null : result.answer(),
+                12L,
+                List.of(result)
+        );
+    }
+}

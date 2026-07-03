@@ -130,13 +130,14 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
             return false;
         }
         if (normalizedRewrite.equals(normalizedOriginal)) {
-            return normalizedRewrite.length() > 14 && containsAny(normalizedRewrite, "流程", "条件", "要求", "时间", "查询", "政策");
+            return normalizedRewrite.length() > 14
+                    && containsAny(normalizedRewrite, "流程", "条件", "要求", "时间", "查询", "政策");
         }
         if (hasTopicDrift(normalizedOriginal, normalizedRewrite)) {
             return false;
         }
         return normalizedRewrite.length() >= Math.min(8, normalizedOriginal.length() + 2)
-                && containsAny(normalizedRewrite, "流程", "条件", "要求", "时间", "查询", "政策", "办理", "材料", "安排", "注意事项");
+                && containsAny(normalizedRewrite, "流程", "条件", "要求", "时间", "查询", "政策", "办理", "材料", "安排", "注意事项", "规则", "入口", "截止");
     }
 
     private boolean hasTopicDrift(String original, String rewritten) {

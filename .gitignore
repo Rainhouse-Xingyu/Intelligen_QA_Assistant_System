@@ -21,6 +21,10 @@ milvus-data/
 # Local app uploads
 uploads/
 
+# Local SSH deploy keys for server handoff. Never commit private keys.
+deploy/ssh/*
+!deploy/ssh/README.md
+
 # Python local runtime and caches
 .venv/
 venv/

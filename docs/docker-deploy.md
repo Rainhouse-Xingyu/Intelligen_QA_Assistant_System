@@ -1,5 +1,7 @@
 # Docker 一键部署说明
 
+> 校内服务器交接、SSH Deploy Key、后续 `git pull` 更新流程请优先参考：`docs/server-deployment-handover.md`。
+
 本项目提供完整 Docker Compose 编排，可一次性启动：
 
 - MySQL 8.0
@@ -93,4 +95,3 @@ AIGE_MODEL_DEVICE=cuda
 ```
 
 并根据服务器 Docker 环境给 `model-service` 增加 GPU 运行配置。不同服务器的 GPU runtime 配置差异较大，当前默认 compose 不强制占用 GPU，以保证 CPU 环境可直接启动。
-

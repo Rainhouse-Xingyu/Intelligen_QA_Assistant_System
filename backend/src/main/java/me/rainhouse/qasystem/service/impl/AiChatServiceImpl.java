@@ -87,11 +87,11 @@ public class AiChatServiceImpl implements AiChatService {
 
         if (isEchoAnswer(query, answer)) {
             log.warn("[AI] generated answer echoed the question, fallback to knowledge answer. sessionId={}", sessionId);
-            answer = firstKnowledgeAnswer(searchResponse);
+            answer = hitKnowledgeAnswer(searchResponse);
         }
 
         if (!StringUtils.hasText(answer)) {
-            answer = firstKnowledgeAnswer(searchResponse);
+            answer = hitKnowledgeAnswer(searchResponse);
             if (StringUtils.hasText(answer)) {
                 answerSource = "RAG";
             } else {
@@ -116,8 +116,11 @@ public class AiChatServiceImpl implements AiChatService {
                 .build();
     }
 
-    private String firstKnowledgeAnswer(VectorSearchResponse searchResponse) {
+    private String hitKnowledgeAnswer(VectorSearchResponse searchResponse) {
         if (searchResponse == null || searchResponse.results() == null) {
+            return null;
+        }
+        if (searchResponse.hitStatus() == null || searchResponse.hitStatus() == 0) {
             return null;
         }
         return searchResponse.results().stream()
