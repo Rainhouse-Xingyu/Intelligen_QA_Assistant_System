@@ -26,6 +26,9 @@ import java.util.Locale;
 @Service
 public class AiChatServiceImpl implements AiChatService {
 
+    private static final String AI_INTERPRETATION_NOTICE =
+            "以上答复含有AI解读成分，如有未尽事宜或其他问题，请具体咨询教务部联系人https://jw.neusoft.edu.cn/25565/";
+
     private final QuestionRawMapper questionRawMapper;
     private final QueryRewriteService queryRewriteService;
     private final IntentClassifierService intentClassifierService;
@@ -109,7 +112,7 @@ public class AiChatServiceImpl implements AiChatService {
                 .hitLabel(searchResponse.hitLabel())
                 .topScore(searchResponse.topScore())
                 .topKnowledgeId(searchResponse.topKnowledgeId())
-                .answer(answer)
+                .answer(formatBusinessAnswer(answer, moduleType, query))
                 .answerSource(answerSource)
                 .responseTimeMs(System.currentTimeMillis() - start)
                 .references(searchResponse.results())
@@ -139,6 +142,41 @@ public class AiChatServiceImpl implements AiChatService {
         return normalizedAnswer.equals(normalizedQuery)
                 || (normalizedAnswer.length() <= normalizedQuery.length() + 4
                 && normalizedAnswer.contains(normalizedQuery));
+    }
+
+    private String formatBusinessAnswer(String answer, String moduleType, String query) {
+        if (!StringUtils.hasText(answer)) {
+            return answer;
+        }
+        String normalizedAnswer = ensureTerminalPunctuation(answer.trim());
+        String closing = isExamQuestion(moduleType, query)
+                ? "祝您考试取得好成绩！"
+                : "谢谢！";
+        return "同学，你好！\n"
+                + "您所咨询的问题解答如下：" + normalizedAnswer + closing
+                + "\n\n"
+                + AI_INTERPRETATION_NOTICE;
+    }
+
+    private String ensureTerminalPunctuation(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.matches(".*[。！？!?；;.]$")
+                ? text
+                : text + "。";
+    }
+
+    private boolean isExamQuestion(String moduleType, String query) {
+        String text = ((moduleType == null ? "" : moduleType) + " " + (query == null ? "" : query)).toLowerCase(Locale.ROOT);
+        return text.contains("考务")
+                || text.contains("考试")
+                || text.contains("四六级")
+                || text.contains("四级")
+                || text.contains("六级")
+                || text.contains("补考")
+                || text.contains("缓考")
+                || text.contains("成绩");
     }
 
     private String normalizeForCompare(String text) {

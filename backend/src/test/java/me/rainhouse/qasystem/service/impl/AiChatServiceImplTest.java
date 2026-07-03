@@ -82,7 +82,43 @@ class AiChatServiceImplTest {
         AiChatResponse response = service.chat(1L, 1L, "线上考试要求", null);
 
         assertEquals("RAG", response.getAnswerSource());
-        assertEquals("线上监考文章内容", response.getAnswer());
+        assertEquals("""
+                同学，你好！
+                您所咨询的问题解答如下：线上监考文章内容。祝您考试取得好成绩！
+
+                以上答复含有AI解读成分，如有未尽事宜或其他问题，请具体咨询教务部联系人https://jw.neusoft.edu.cn/25565/""", response.getAnswer());
+    }
+
+    @Test
+    void nonExamBusinessAnswerUsesThanksClosing() {
+        QuestionRawMapper questionRawMapper = mock(QuestionRawMapper.class);
+        QueryRewriteService rewriteService = query -> query + "？";
+        IntentClassifierService classifierService = (query, selectedModule) -> "教学运行";
+        VectorSearchService vectorSearchService = mock(VectorSearchService.class);
+        AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
+        ChatMemoryService chatMemoryService = noMemory();
+        when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
+        when(vectorSearchService.search(any(), any(), any(), any(), any())).thenReturn(searchResponse(1, 0.72));
+        when(answerGeneratorService.generate(any(), any(), any(), any())).thenReturn("选课安排以教务部通知为准");
+
+        AiChatServiceImpl service = new AiChatServiceImpl(
+                questionRawMapper,
+                rewriteService,
+                classifierService,
+                vectorSearchService,
+                answerGeneratorService,
+                mock(CozeService.class),
+                mock(UnrecognizedQueryService.class),
+                chatMemoryService
+        );
+
+        AiChatResponse response = service.chat(1L, 1L, "什么时候选课", null);
+
+        assertEquals("""
+                同学，你好！
+                您所咨询的问题解答如下：选课安排以教务部通知为准。谢谢！
+
+                以上答复含有AI解读成分，如有未尽事宜或其他问题，请具体咨询教务部联系人https://jw.neusoft.edu.cn/25565/""", response.getAnswer());
     }
 
     private static ChatMemoryService noMemory() {
