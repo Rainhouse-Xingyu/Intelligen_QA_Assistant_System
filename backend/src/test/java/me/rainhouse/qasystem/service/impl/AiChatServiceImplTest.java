@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -147,6 +148,35 @@ class AiChatServiceImplTest {
         assertEquals("LOCAL_PSY", response.getAnswerSource());
         assertEquals("别急，我们先把事情拆小一点。", response.getAnswer());
         assertFalse(response.getAnswer().contains("您所咨询的问题解答如下"));
+    }
+
+    @Test
+    void psychologicalKeywordsRouteToLocalModelWithoutSelectedCategory() {
+        QuestionRawMapper questionRawMapper = mock(QuestionRawMapper.class);
+        QueryRewriteService rewriteService = query -> query;
+        IntentClassifierService classifierService = mock(IntentClassifierService.class);
+        VectorSearchService vectorSearchService = mock(VectorSearchService.class);
+        AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
+        ChatMemoryService chatMemoryService = noMemory();
+        when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
+
+        AiChatServiceImpl service = new AiChatServiceImpl(
+                questionRawMapper,
+                rewriteService,
+                classifierService,
+                vectorSearchService,
+                answerGeneratorService,
+                fixedPsychModel(),
+                mock(UnrecognizedQueryService.class),
+                chatMemoryService
+        );
+
+        AiChatResponse response = service.chat(1L, 1L, "我最近压力大，晚上总是睡不着", null);
+
+        assertEquals("心理辅导", response.getModuleType());
+        assertEquals("LOCAL_PSY", response.getAnswerSource());
+        verify(classifierService, never()).classify(any(), any());
+        verify(vectorSearchService, never()).search(any(), any(), any(), any(), any());
     }
 
     private static ChatMemoryService noMemory() {

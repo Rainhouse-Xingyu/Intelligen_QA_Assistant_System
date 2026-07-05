@@ -26,6 +26,8 @@
       v-else-if="currentPage === 'chat'"
       :initial-question="currentQuestion"
       :initial-category="currentCategory"
+      :history-id="currentHistoryId"
+      :initial-messages="currentMessages"
       @go-home="currentPage = 'home'"
     />
   </div>
@@ -57,10 +59,14 @@ const routeMap = {
 const currentPage = ref(routeMap[window.location.pathname] || 'home')
 const currentQuestion = ref('')
 const currentCategory = ref('')
+const currentHistoryId = ref('')
+const currentMessages = ref([])
 
 const onStartChat = (payload) => {
-  currentQuestion.value = payload.question
-  currentCategory.value = payload.category
+  currentQuestion.value = payload.question || ''
+  currentCategory.value = payload.category || ''
+  currentHistoryId.value = payload.historyId || ''
+  currentMessages.value = Array.isArray(payload.messages) ? payload.messages : []
   currentPage.value = 'chat'
 }
 

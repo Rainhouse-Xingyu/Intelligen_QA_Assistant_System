@@ -97,7 +97,7 @@ export default {
         const now = Date.now()
         conversations.value = (Array.isArray(parsed) ? parsed : [])
           .filter(conv => {
-            const time = new Date(conv.createdAt || conv.updatedAt || 0).getTime()
+            const time = new Date(conv.updatedAt || conv.createdAt || 0).getTime()
             return Number.isFinite(time) && now - time <= HISTORY_RETENTION_MS
           })
         saveConversations()
@@ -116,10 +116,20 @@ export default {
     }
 
     const selectConversation = (conv) => {
+      const fallbackQuestion = conv.firstQuestion || conv.title || ''
+      const restoredMessages = Array.isArray(conv.messages) && conv.messages.length
+        ? conv.messages
+        : fallbackQuestion
+          ? [
+              { type: 'user', content: fallbackQuestion },
+              { type: 'bot', content: '这是之前的历史提问，当前本地没有保存当时的回答。你可以继续追问，我会接着这条会话帮你处理。' }
+            ]
+          : []
       emit('start-chat', {
-        question: conv.firstQuestion || conv.title,
+        question: '',
         category: conv.category || null,
-        historyId: conv.id
+        historyId: conv.id,
+        messages: restoredMessages
       })
     }
 
@@ -137,9 +147,9 @@ export default {
 
     const loadCommonQuestions = async () => {
       try {
-        const data = await apiGet('/api/chat/common-questions', { limit: 5 })
+        const data = await apiGet('/api/chat/common-questions', { limit: 8 })
         commonQuestions.value = Array.isArray(data)
-          ? data.map(normalizeQuestionItem).filter(item => item.questionText).slice(0, 5)
+          ? data.map(normalizeQuestionItem).filter(item => item.questionText).slice(0, 8)
           : []
       } catch {
         commonQuestions.value = []
@@ -153,7 +163,7 @@ export default {
       if (normalized.moduleType) {
         selectedCategory.value = normalized.moduleType
       }
-      handleSendFromHome()
+      handleSendFromHome(normalized)
     }
 
     // --- Auth methods ---
@@ -233,24 +243,39 @@ export default {
       selectedCategory.value = selectedCategory.value === category ? null : category
     }
 
-    const handleSendFromHome = () => {
+    const handleSendFromHome = (directItem = null) => {
       if (!question.value.trim()) return
+      const trimmedQuestion = question.value.trim()
+      const directAnswer = directItem?.answerText?.trim()
+      const initialMessages = directAnswer
+        ? [
+            { type: 'user', content: trimmedQuestion },
+            { type: 'bot', content: directAnswer, durationMs: 0, answerSource: 'COMMON_DIRECT' }
+          ]
+        : []
+
+      let historyId = ''
 
       if (isLoggedIn.value) {
+        historyId = 'conv_' + Date.now()
         const conv = {
-          id: 'conv_' + Date.now(),
-          title: question.value.trim().substring(0, 30),
-          firstQuestion: question.value.trim(),
+          id: historyId,
+          title: trimmedQuestion.substring(0, 30),
+          firstQuestion: trimmedQuestion,
           category: selectedCategory.value,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: initialMessages
         }
         conversations.value.unshift(conv)
         saveConversations()
       }
 
       emit('start-chat', {
-        question: question.value,
-        category: selectedCategory.value
+        question: directAnswer ? '' : trimmedQuestion,
+        category: selectedCategory.value,
+        historyId,
+        messages: initialMessages
       })
       question.value = ''
     }

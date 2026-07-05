@@ -194,7 +194,7 @@
   background-size: 220% 100%;
   -webkit-background-clip: text;
   background-clip: text;
-  animation: thinking-shine 1.45s linear infinite;
+  animation: thinking-shine 2.4s linear infinite;
 }
 @keyframes thinking-shine {
   from { background-position: 160% 0; }
@@ -207,6 +207,11 @@
   color: #8ea1c8;
   font-size: 12px;
   font-weight: 700;
+}
+.msg-audio {
+  display: block;
+  width: min(320px, 100%);
+  margin-top: 10px;
 }
 .user-message .msg-duration {
   color: rgba(255, 255, 255, 0.75);
@@ -233,7 +238,8 @@
   color: #2d3748;
   padding: 12px 0;
 }
-.chat-input-area .send-btn {
+.chat-input-area .send-btn,
+.chat-input-area .voice-btn {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -254,4 +260,15 @@
 }
 .chat-input-area .send-btn.active {
   background: #3182ce;
+}
+.chat-input-area .voice-btn {
+  background: #edf2f7;
+  color: #4a5568;
+}
+.chat-input-area .voice-btn:hover {
+  background: #e2e8f0;
+}
+.chat-input-area .voice-btn.recording {
+  background: #e53e3e;
+  color: #fff;
 }

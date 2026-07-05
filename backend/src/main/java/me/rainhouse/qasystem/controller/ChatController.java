@@ -254,6 +254,52 @@ public class ChatController {
         return Result.success("识别内容: [" + queryText + "] \nAI回复: " + aiAnswer + " \n播放地址: " + responseMediaUrl);
     }
 
+    @PostMapping("/voice-detail")
+    public Result<AiChatResponse> sendVoiceDetail(@RequestParam("audioFile") MultipartFile audioFile,
+                                                  HttpServletRequest request) {
+        long start = System.currentTimeMillis();
+        Long userId = getUserIdOpt(request);
+        ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
+        String queryText = audioService.speechToText(audioFile);
+
+        if (!CasualConversationUtils.isCasualOnly(queryText)) {
+            statHotQuestionService.recordQuestion(queryText);
+        }
+
+        if (session.getStatus() == 1) {
+            saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
+            String wsAdminMsg = String.format("{\"type\":\"USER_MSG\", \"sessionId\":%d, \"userId\":%d, \"content\":\"%s(语音)\"}", session.getId(), userId, queryText.replace("\"", "\\\""));
+            if (session.getAdminId() != null) {
+                ChatWebSocketServer.sendMessageToAdmin(String.valueOf(session.getAdminId()), wsAdminMsg);
+            }
+            AiChatResponse response = AiChatResponse.builder()
+                    .originalQuestion(queryText)
+                    .rewriteQuestion(queryText)
+                    .recognizedText(queryText)
+                    .hitStatus(0)
+                    .hitLabel("转人工")
+                    .topScore(0.0)
+                    .answer("识别内容已发给人工客服")
+                    .answerSource("HUMAN_TRANSFER")
+                    .responseTimeMs(System.currentTimeMillis() - start)
+                    .references(List.of())
+                    .build();
+            return Result.success(response);
+        }
+
+        saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
+        AiChatResponse response = aiChatService.chat(userId, session.getId(), queryText, null);
+        String aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, response.getAnswer());
+        String responseMediaUrl = audioService.textToSpeech(aiAnswer);
+        response.setAnswer(aiAnswer);
+        response.setRecognizedText(queryText);
+        response.setMediaUrl(responseMediaUrl);
+        response.setResponseTimeMs(System.currentTimeMillis() - start);
+        saveMessage(session.getId(), 2, 2, aiAnswer, responseMediaUrl);
+        updateAnswerSource(session.getId(), response.getAnswerSource());
+        return Result.success(response);
+    }
+
     /**
      * 心理指导：使用本地生成模型输出轻松、安抚型回复，不再依赖 Coze 工作流。
      */
@@ -414,7 +460,7 @@ public class ChatController {
 
     @GetMapping("/common-questions")
     public Result<List<Map<String, Object>>> getCommonQuestions(
-            @RequestParam(defaultValue = "5") int limit) {
+            @RequestParam(defaultValue = "8") int limit) {
         return Result.success(statHotQuestionService.getRandomQuestionAnswers(limit));
     }
 

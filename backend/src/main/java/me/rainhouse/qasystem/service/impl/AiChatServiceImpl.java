@@ -81,7 +81,9 @@ public class AiChatServiceImpl implements AiChatService {
         String memoryContext = chatMemoryService.buildRecentContext(sessionId, query);
         String rewriteQuestion = queryRewriteService.rewrite(query);
         String retrievalQuestion = chatMemoryService.buildRetrievalQuery(rewriteQuestion, memoryContext);
-        String moduleType = intentClassifierService.classify(retrievalQuestion, selectedModuleType);
+        String moduleType = shouldRouteToPsychology(query, selectedModuleType)
+                ? "心理辅导"
+                : intentClassifierService.classify(retrievalQuestion, selectedModuleType);
         saveRawQuestion(userId, sessionId, query, moduleType);
 
         if ("心理辅导".equals(moduleType)) {
@@ -159,6 +161,31 @@ public class AiChatServiceImpl implements AiChatService {
             log.warn("[AI] local psychological counseling failed, fallback to canned reply: {}", ex.getMessage());
         }
         return LocalModelClient.superFallbackPsychologicalCounseling(query);
+    }
+
+    private boolean shouldRouteToPsychology(String query, String selectedModuleType) {
+        if (StringUtils.hasText(selectedModuleType)) {
+            return false;
+        }
+        if (!StringUtils.hasText(query)) {
+            return false;
+        }
+        String text = normalizeForCompare(query);
+        return text.contains("心理")
+                || text.contains("焦虑")
+                || text.contains("压力大")
+                || text.contains("紧张")
+                || text.contains("烦躁")
+                || text.contains("难过")
+                || text.contains("崩溃")
+                || text.contains("失眠")
+                || text.contains("睡不着")
+                || text.contains("抑郁")
+                || text.contains("不开心")
+                || text.contains("想哭")
+                || text.contains("害怕")
+                || text.contains("孤独")
+                || text.contains("迷茫");
     }
 
     private boolean isEchoAnswer(String query, String answer) {

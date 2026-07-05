@@ -56,6 +56,7 @@
             </div>
             <div v-else class="msg-bubble">
               <div v-html="formatContent(msg.content)"></div>
+              <audio v-if="msg.mediaUrl" class="msg-audio" controls :src="msg.mediaUrl"></audio>
               <div v-if="msg.type === 'bot' && msg.durationMs !== undefined" class="msg-duration">
                 已处理 {{ formatDuration(msg.durationMs) }}
               </div>
@@ -78,6 +79,19 @@
            placeholder="给助手发条消息... (Enter 发送, Shift+Enter 换行)"
            @keydown.enter.prevent="handleChatEnter"
          ></textarea>
+         <button
+           class="voice-btn"
+           :class="{ recording: isRecording }"
+           :title="isRecording ? '停止录音' : '语音提问'"
+           @click="toggleVoiceRecording"
+         >
+           <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+             <path d="M12 19v3"></path>
+             <path d="M8 22h8"></path>
+           </svg>
+         </button>
          <button class="send-btn" :class="{ active: chatInput.trim().length > 0 }" @click="sendMessage(false)">
            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
               <line x1="22" y1="2" x2="11" y2="13"></line>
