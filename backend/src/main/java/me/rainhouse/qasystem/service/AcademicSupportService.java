@@ -3,6 +3,10 @@ package me.rainhouse.qasystem.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import me.rainhouse.qasystem.entity.AcademicWarningRecord;
 import me.rainhouse.qasystem.entity.StudentProfile;
+import me.rainhouse.qasystem.entity.StudentWarningLevel;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 public interface AcademicSupportService extends IService<AcademicWarningRecord> {
     
@@ -20,6 +24,12 @@ public interface AcademicSupportService extends IService<AcademicWarningRecord> 
      * 更新或插入学生基础画像数据（辅助测试使用）
      */
     void saveOrUpdateProfile(StudentProfile profile);
+
+    List<StudentWarningLevel> listWarningLevels();
+
+    StudentWarningLevel saveWarningLevel(StudentWarningLevel warningLevel);
+
+    int importWarningLevels(MultipartFile file);
 
     /**
      * 【5.3模块】帮扶成效报告自动化生成（模拟生成可下载的报告URL）

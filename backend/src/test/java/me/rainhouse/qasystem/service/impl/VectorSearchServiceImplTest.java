@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,7 +45,7 @@ class VectorSearchServiceImplTest {
     }
 
     @Test
-    void fallbackSearchesAllVectorsWhenModuleFilterMisses() {
+    void moduleFilterMissDoesNotFallbackToAllVectors() {
         MilvusClientManager milvus = mock(MilvusClientManager.class);
         QuestionHitRecordMapper hitRecordMapper = mock(QuestionHitRecordMapper.class);
         when(milvus.size()).thenReturn(10);
@@ -53,16 +54,15 @@ class VectorSearchServiceImplTest {
         when(milvus.search(any(), eq("考试"), anyInt())).thenReturn(List.of());
         when(milvus.search(any(), eq("考试通知"), anyInt())).thenReturn(List.of());
         when(milvus.search(any(), eq("四六级"), anyInt())).thenReturn(List.of());
-        when(milvus.search(any(), eq(null), anyInt())).thenReturn(List.of(document(2L, "其他历史模块")));
         when(hitRecordMapper.insert(any(QuestionHitRecord.class))).thenReturn(1);
 
         VectorSearchServiceImpl service = service(milvus, hitRecordMapper);
 
         VectorSearchResponse response = service.search("四级考试报名时间是什么时候？", "考务通知", 3, 1L, 1L);
 
-        assertEquals(0.82, response.topScore());
-        assertEquals(2L, response.topKnowledgeId());
-        verify(milvus).search(any(), eq(null), anyInt());
+        assertEquals(0.0, response.topScore());
+        assertEquals(null, response.topKnowledgeId());
+        verify(milvus, never()).search(any(), eq(null), anyInt());
     }
 
     private static VectorSearchServiceImpl service(MilvusClientManager milvus,

@@ -31,11 +31,13 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -54,6 +56,21 @@ public class SurveyServiceImpl implements SurveyService {
     private static final int SKIP_EXPORT_COLUMNS = 4;
     private static final int QUESTION_TYPE_SCALE = 1;
     private static final int QUESTION_TYPE_TEXT = 2;
+    private static final List<String> SUPPORTED_COLLEGES = List.of(
+            "人工智能学院",
+            "软件学院",
+            "信息与商务管理学院",
+            "智能与电子工程学院",
+            "数字艺术与设计学院",
+            "外国语学院",
+            "健康医疗科技学院",
+            "应用技术学院",
+            "创新创业学院",
+            "基础教学学院",
+            "马克思主义学院",
+            "国际教育学院",
+            "继续教育学院"
+    );
 
     private final SurveyMapper surveyMapper;
     private final SurveyQuestionMapper surveyQuestionMapper;
@@ -151,6 +168,7 @@ public class SurveyServiceImpl implements SurveyService {
             throw new IllegalArgumentException("问卷模板没有题目");
         }
         validateTimeRange(request.getStartTime(), request.getEndTime());
+        validateScope(request.getScopeType(), request.getScopeText());
 
         Survey survey = new Survey();
         survey.setTemplateId(template.getId());
@@ -369,6 +387,55 @@ public class SurveyServiceImpl implements SurveyService {
                     .toList());
             return dto;
         }).toList();
+    }
+
+    @Override
+    public byte[] exportSubmissionsExcel(Long surveyId) {
+        Survey survey = requireSurvey(surveyId);
+        List<SurveyQuestion> questions = listQuestions(surveyId);
+        List<SurveySubmissionDTO> submissions = listSubmissions(surveyId);
+
+        try (Workbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet(safeSheetName(survey.getTitle()));
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("学生姓名");
+            header.createCell(1).setCellValue("账号/学号");
+            header.createCell(2).setCellValue("提交时间");
+            for (int i = 0; i < questions.size(); i++) {
+                header.createCell(i + 3).setCellValue(questions.get(i).getQuestionText());
+            }
+
+            Map<Long, Integer> questionColumnMap = new HashMap<>();
+            for (int i = 0; i < questions.size(); i++) {
+                questionColumnMap.put(questions.get(i).getId(), i + 3);
+            }
+
+            for (int rowIndex = 0; rowIndex < submissions.size(); rowIndex++) {
+                SurveySubmissionDTO submission = submissions.get(rowIndex);
+                Row row = sheet.createRow(rowIndex + 1);
+                row.createCell(0).setCellValue(firstText(submission.getRealName(), "", "-"));
+                row.createCell(1).setCellValue(firstText(submission.getUsername(), String.valueOf(submission.getUserId()), "-"));
+                row.createCell(2).setCellValue(submission.getSubmitTime() == null ? "" : submission.getSubmitTime().toString());
+                if (submission.getAnswers() == null) {
+                    continue;
+                }
+                for (SurveySubmissionAnswerDTO answer : submission.getAnswers()) {
+                    Integer column = questionColumnMap.get(answer.getQuestionId());
+                    if (column != null) {
+                        row.createCell(column).setCellValue(exportAnswerValue(answer));
+                    }
+                }
+            }
+
+            for (int i = 0; i < Math.min(questions.size() + 3, 40); i++) {
+                sheet.autoSizeColumn(i);
+            }
+            workbook.write(outputStream);
+            return outputStream.toByteArray();
+        } catch (Exception e) {
+            throw new IllegalStateException("导出问卷失败: " + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -619,6 +686,19 @@ public class SurveyServiceImpl implements SurveyService {
         }
     }
 
+    private void validateScope(String scopeType, String scopeText) {
+        String normalizedScope = StringUtils.hasText(scopeType) ? scopeType.trim() : "ALL";
+        if ("ALL".equals(normalizedScope)) {
+            return;
+        }
+        if (!"COLLEGE".equals(normalizedScope)) {
+            throw new IllegalArgumentException("覆盖范围仅支持全校或指定学院");
+        }
+        if (!StringUtils.hasText(scopeText) || !SUPPORTED_COLLEGES.contains(scopeText.trim())) {
+            throw new IllegalArgumentException("请选择有效学院");
+        }
+    }
+
     private SurveyQuestionDTO toQuestionDTO(SurveyQuestion question) {
         SurveyQuestionDTO dto = new SurveyQuestionDTO();
         dto.setId(question.getId());
@@ -655,6 +735,26 @@ public class SurveyServiceImpl implements SurveyService {
             return second;
         }
         return fallback;
+    }
+
+    private String safeSheetName(String title) {
+        String name = StringUtils.hasText(title) ? title.trim() : "问卷导出";
+        name = name.replaceAll("[\\\\/?*\\[\\]:]", "_");
+        return name.length() > 31 ? name.substring(0, 31) : name;
+    }
+
+    private String exportAnswerValue(SurveySubmissionAnswerDTO answer) {
+        if (answer.getNumericAnswer() != null) {
+            return switch (answer.getNumericAnswer()) {
+                case 1 -> "1 完全符合";
+                case 2 -> "2 比较符合";
+                case 3 -> "3 一般符合";
+                case 4 -> "4 比较不符合";
+                case 5 -> "5 不符合";
+                default -> String.valueOf(answer.getNumericAnswer());
+            };
+        }
+        return StringUtils.hasText(answer.getTextAnswer()) ? answer.getTextAnswer() : "";
     }
 
     private record QuestionDraft(String questionCode, String indicatorName, String questionText, Integer questionType, Integer required) {

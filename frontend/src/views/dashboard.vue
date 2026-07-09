@@ -64,6 +64,38 @@
         </div>
       </section>
 
+      <section class="admin-card hot-config-card">
+        <div class="panel-head">
+          <h3 class="section-title">首页热门问题配置</h3>
+          <button class="btn text" @click="loadHotConfigs">
+            <RefreshIcon />
+            刷新
+          </button>
+        </div>
+        <div class="hot-config-form">
+          <input v-model="hotConfigForm.questionText" class="input" placeholder="热门问题" />
+          <input v-model="hotConfigForm.answerText" class="input" placeholder="直接回答内容" />
+          <select v-model="hotConfigForm.moduleType" class="select">
+            <option value="">未分类</option>
+            <option v-for="module in modules" :key="module" :value="module">{{ module }}</option>
+          </select>
+          <input v-model="hotConfigForm.validUntil" class="input" type="datetime-local" />
+          <button class="btn gold" :disabled="savingHotConfig" @click="saveHotConfig">
+            {{ savingHotConfig ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
+        <div class="hot-config-list">
+          <div v-for="item in hotConfigs" :key="item.id" class="hot-config-row">
+            <div>
+              <strong>{{ item.questionText }}</strong>
+              <span>{{ item.moduleType || '未分类' }} · 截止 {{ formatDateTime(item.validUntil) }}</span>
+            </div>
+            <button class="btn text danger" @click="deleteHotConfig(item)">删除</button>
+          </div>
+          <div v-if="hotConfigs.length === 0" class="empty">暂无手选热门问题配置</div>
+        </div>
+      </section>
+
       <section class="admin-card">
         <div class="panel-head">
           <h3 class="section-title">未识别问题列表</h3>
@@ -104,7 +136,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { apiForm, apiGet } from '../js/adminApi'
+import { apiDelete, apiForm, apiGet, apiJson } from '../js/adminApi'
 import '../css/admin.css'
 import { AdminSidebar, AlertIcon, CheckIcon, RefreshIcon } from './shared/adminParts'
 
@@ -113,6 +145,17 @@ const loading = ref(false)
 const overview = ref({})
 const hotQuestions = ref([])
 const unrecognized = ref([])
+const hotConfigs = ref([])
+const savingHotConfig = ref(false)
+const modules = ['考务通知', '教学运行', '学业帮扶', '心理辅导']
+const hotConfigForm = ref({
+  questionText: '',
+  answerText: '',
+  moduleType: '',
+  validUntil: '',
+  enabled: 1,
+  sortOrder: 0
+})
 
 const topUnrecognized = computed(() => overview.value.topUnrecognized || [])
 const statCards = computed(() => [
@@ -125,14 +168,16 @@ const statCards = computed(() => [
 async function loadData() {
   loading.value = true
   try {
-    const [overviewData, hotData, listData] = await Promise.all([
+    const [overviewData, hotData, listData, configData] = await Promise.all([
       apiGet('/api/stat/fallback-overview', { days: days.value }),
       apiGet('/api/stat/hot-questions', { days: days.value, limit: 20 }),
-      apiGet('/api/admin/unrecognized/list', { current: 1, size: 50 })
+      apiGet('/api/admin/unrecognized/list', { current: 1, size: 50 }),
+      apiGet('/api/stat/hot-question-configs')
     ])
     overview.value = overviewData || {}
     hotQuestions.value = hotData || []
     unrecognized.value = listData?.records || []
+    hotConfigs.value = configData || []
   } finally {
     loading.value = false
   }
@@ -156,6 +201,38 @@ async function markHandled(item) {
   await loadData()
 }
 
+async function loadHotConfigs() {
+  hotConfigs.value = await apiGet('/api/stat/hot-question-configs')
+}
+
+async function saveHotConfig() {
+  if (!hotConfigForm.value.questionText || !hotConfigForm.value.answerText) return
+  savingHotConfig.value = true
+  try {
+    await apiJson('/api/stat/hot-question-configs', {
+      ...hotConfigForm.value,
+      validUntil: hotConfigForm.value.validUntil ? `${hotConfigForm.value.validUntil}:00` : null
+    })
+    hotConfigForm.value = {
+      questionText: '',
+      answerText: '',
+      moduleType: '',
+      validUntil: '',
+      enabled: 1,
+      sortOrder: 0
+    }
+    await loadHotConfigs()
+  } finally {
+    savingHotConfig.value = false
+  }
+}
+
+async function deleteHotConfig(item) {
+  if (!item?.id) return
+  await apiDelete(`/api/stat/hot-question-configs/${item.id}`)
+  await loadHotConfigs()
+}
+
 function barWidth(value) {
   const max = Math.max(...hotQuestions.value.map(item => Number(item.value || 0)), 1)
   return `${Math.max(6, (Number(value || 0) / max) * 100)}%`
@@ -164,6 +241,11 @@ function barWidth(value) {
 function formatDate(value) {
   if (!value) return '-'
   return new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
+function formatDateTime(value) {
+  if (!value) return '长期有效'
+  return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
 onMounted(loadData)
@@ -227,6 +309,41 @@ onMounted(loadData)
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 22px;
+}
+.hot-config-card {
+  margin-top: 22px;
+}
+.hot-config-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(220px, 1.5fr) 150px 190px auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.hot-config-list {
+  display: grid;
+  gap: 10px;
+}
+.hot-config-row {
+  min-height: 58px;
+  border: 1px solid #d8e4f5;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hot-config-row strong {
+  display: block;
+  color: #173875;
+}
+.hot-config-row span {
+  display: block;
+  margin-top: 4px;
+  color: #6e82b1;
+  font-weight: 800;
 }
 
 .hot-row {
@@ -296,6 +413,16 @@ onMounted(loadData)
   .dashboard-grid {
     grid-template-columns: 1fr 1fr;
   }
+  .hot-config-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .stats-grid,
+  .dashboard-grid,
+  .hot-config-form {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
-

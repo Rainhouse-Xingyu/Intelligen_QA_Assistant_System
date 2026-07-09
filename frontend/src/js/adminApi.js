@@ -82,6 +82,24 @@ export async function apiDelete(path) {
   return parseResponse(response)
 }
 
+export async function apiDownload(path, filename) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: authHeaders()
+  })
+  if (!response.ok) {
+    throw new Error(response.statusText || `请求失败: ${response.status}`)
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function wsUrl(path) {
   const base = API_BASE || window.location.origin
   const url = new URL(path, base)

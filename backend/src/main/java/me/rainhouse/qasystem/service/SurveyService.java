@@ -38,5 +38,7 @@ public interface SurveyService {
 
     List<SurveySubmissionDTO> listSubmissions(Long surveyId);
 
+    byte[] exportSubmissionsExcel(Long surveyId);
+
     SurveyTrendDTO getStudentTrend(Long userId);
 }

@@ -107,12 +107,19 @@
                 覆盖范围
                 <select v-model="taskForm.scopeType" class="input">
                   <option value="ALL">全校学生</option>
-                  <option value="CUSTOM">指定范围</option>
+                  <option value="COLLEGE">指定学院</option>
                 </select>
               </label>
-              <label>
+              <label v-if="taskForm.scopeType === 'COLLEGE'">
+                选择学院
+                <select v-model="taskForm.scopeText" class="input">
+                  <option value="">请选择学院</option>
+                  <option v-for="college in colleges" :key="college" :value="college">{{ college }}</option>
+                </select>
+              </label>
+              <label v-else>
                 范围说明
-                <input v-model="taskForm.scopeText" class="input" placeholder="如 软件学院 2024 级" />
+                <input class="input" value="全校" disabled />
               </label>
             </div>
             <div class="two-cols">
@@ -131,6 +138,16 @@
                   <option :value="2">第 2 学期</option>
                   <option :value="3">第 3 学期</option>
                 </select>
+              </label>
+            </div>
+            <div class="two-cols">
+              <label>
+                开始时间
+                <input v-model="taskForm.startTime" class="input" type="datetime-local" />
+              </label>
+              <label>
+                结束时间
+                <input v-model="taskForm.endTime" class="input" type="datetime-local" />
               </label>
             </div>
             <label class="check-row">
@@ -233,7 +250,12 @@
             <section class="submission-panel">
               <div class="panel-head small">
                 <h4>提交记录</h4>
-                <button class="btn text" @click="loadSubmissions">刷新</button>
+                <div class="toolbar">
+                  <button class="btn text" @click="loadSubmissions">刷新</button>
+                  <button class="btn text" :disabled="exporting || submissions.length === 0" @click="exportSubmissions">
+                    {{ exporting ? '导出中...' : '导出 Excel' }}
+                  </button>
+                </div>
               </div>
               <table class="admin-table">
                 <thead>
@@ -269,7 +291,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { apiDelete, apiForm, apiGet, apiJson, apiUpload } from '../js/adminApi'
+import { apiDelete, apiDownload, apiForm, apiGet, apiJson, apiUpload } from '../js/adminApi'
 import '../css/admin.css'
 import SurveyTrendChart from '../components/SurveyTrendChart.vue'
 import { AdminSidebar, AdminTopbar, CheckIcon, FileIcon, UploadIcon } from './shared/adminParts'
@@ -287,6 +309,7 @@ const uploading = ref(false)
 const creating = ref(false)
 const acting = ref(false)
 const trendLoading = ref(false)
+const exporting = ref(false)
 
 const submissionDisplayName = computed(() => (
   selectedSubmission.value?.realName
@@ -301,6 +324,21 @@ const templateForm = reactive({
 })
 
 const academicYears = Array.from({ length: 4 }, (_, index) => new Date().getFullYear() - 2 + index)
+const colleges = [
+  '人工智能学院',
+  '软件学院',
+  '信息与商务管理学院',
+  '智能与电子工程学院',
+  '数字艺术与设计学院',
+  '外国语学院',
+  '健康医疗科技学院',
+  '应用技术学院',
+  '创新创业学院',
+  '基础教学学院',
+  '马克思主义学院',
+  '国际教育学院',
+  '继续教育学院'
+]
 
 const taskForm = reactive({
   templateId: null,
@@ -312,6 +350,8 @@ const taskForm = reactive({
   scopeText: '',
   academicYear: currentAcademicYear(),
   termNo: currentTermNo(),
+  startTime: '',
+  endTime: '',
   publishNow: true
 })
 
@@ -405,8 +445,9 @@ async function createTask() {
   try {
     const payload = {
       ...taskForm,
-      startTime: null,
-      endTime: null
+      scopeText: taskForm.scopeType === 'ALL' ? '全校' : taskForm.scopeText,
+      startTime: toApiDateTime(taskForm.startTime),
+      endTime: toApiDateTime(taskForm.endTime)
     }
     const survey = await apiJson('/api/survey/admin/tasks', payload)
     resetTaskForm()
@@ -426,6 +467,8 @@ function resetTaskForm() {
   taskForm.scopeText = ''
   taskForm.academicYear = currentAcademicYear()
   taskForm.termNo = currentTermNo()
+  taskForm.startTime = ''
+  taskForm.endTime = ''
   taskForm.publishNow = true
 }
 
@@ -482,6 +525,17 @@ async function deleteSubmission(item) {
   await loadSubmissions()
 }
 
+async function exportSubmissions() {
+  if (!selectedId.value || !detail.value?.survey) return
+  exporting.value = true
+  try {
+    const title = String(detail.value.survey.title || `survey-${selectedId.value}`).replace(/[\\/:*?"<>|]/g, '_')
+    await apiDownload(`/api/survey/admin/${selectedId.value}/submissions/export`, `${title}-提交记录.xlsx`)
+  } finally {
+    exporting.value = false
+  }
+}
+
 function statusText(status) {
   return ({ 0: '草稿', 1: '已发布', 2: '已关闭' })[status] || '未知'
 }
@@ -493,7 +547,8 @@ function statusClass(status) {
 }
 
 function scopeText(scopeType) {
-  return scopeType === 'CUSTOM' ? '指定范围' : '全校学生'
+  if (scopeType === 'COLLEGE') return '指定学院'
+  return '全校学生'
 }
 
 function templateName(templateId) {
@@ -549,6 +604,10 @@ function currentTermNo() {
 
 function formatAcademicYear(year) {
   return year ? `${year}-${String(year + 1).slice(2)} 学年` : '-'
+}
+
+function toApiDateTime(value) {
+  return value ? `${value}:00` : null
 }
 
 onMounted(async () => {

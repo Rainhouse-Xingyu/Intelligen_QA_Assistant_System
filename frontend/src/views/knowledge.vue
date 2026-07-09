@@ -99,17 +99,15 @@
               <option value="">全部模块</option>
               <option v-for="module in modules" :key="module" :value="module">{{ module }}</option>
             </select>
-            <select v-model="filters.status" class="select" @change="loadEntries">
-              <option value="">全部状态</option>
-              <option value="1">启用</option>
-              <option value="0">禁用</option>
-            </select>
             <select v-model="filters.sourceType" class="select" @change="loadEntries">
               <option value="">全部来源</option>
               <option value="manual">manual</option>
               <option value="document">document</option>
               <option value="common_question">常见问题</option>
             </select>
+            <input v-model="filters.categoryL1" class="input" placeholder="一级分类" @keyup.enter="loadEntries" />
+            <input v-model="filters.categoryL2" class="input" placeholder="二级分类" @keyup.enter="loadEntries" />
+            <input v-model="filters.categoryL3" class="input" placeholder="三级分类" @keyup.enter="loadEntries" />
           </div>
 
           <div class="selection-bar">
@@ -228,8 +226,10 @@ const allDocumentsSelected = computed(() => {
 const filters = reactive({
   keyword: '',
   moduleType: '',
-  status: '',
-  sourceType: ''
+  sourceType: '',
+  categoryL1: '',
+  categoryL2: '',
+  categoryL3: ''
 })
 
 const form = reactive({
@@ -592,7 +592,7 @@ onMounted(() => {
 
 .filters {
   display: grid;
-  grid-template-columns: 1.2fr repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin-bottom: 16px;
 }
 
@@ -747,4 +747,3 @@ onMounted(() => {
   }
 }
 </style>
-

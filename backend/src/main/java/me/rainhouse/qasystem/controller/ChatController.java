@@ -455,13 +455,14 @@ public class ChatController {
     @GetMapping("/suggested-questions")
     public Result<List<Map<String, Object>>> getSuggestedQuestions(
             @RequestParam(defaultValue = "3") int limit) {
-        return Result.success(statHotQuestionService.getHotQuestions(30, limit));
+        return Result.success(statHotQuestionService.getHomeHotQuestionAnswers(limit));
     }
 
     @GetMapping("/common-questions")
     public Result<List<Map<String, Object>>> getCommonQuestions(
-            @RequestParam(defaultValue = "8") int limit) {
-        return Result.success(statHotQuestionService.getRandomQuestionAnswers(limit));
+            @RequestParam(defaultValue = "8") int limit,
+            @RequestParam(value = "moduleType", required = false) String moduleType) {
+        return Result.success(statHotQuestionService.getRandomQuestionAnswers(limit, moduleType));
     }
 
     /**

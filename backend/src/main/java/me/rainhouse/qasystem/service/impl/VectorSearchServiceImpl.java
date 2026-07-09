@@ -126,21 +126,6 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         VectorSearchResult topResult = results.isEmpty() ? null : results.get(0);
         HitDecision hitDecision = hitRuleEngine.decide(topResult == null ? 0.0 : topResult.finalScore());
 
-        if (hitDecision.hitStatus() == 0 && StringUtils.hasText(moduleType)) {
-            List<VectorSearchResult> fallbackResults = searchAndRerank(query, queryVector, List.of(), resultLimit);
-            VectorSearchResult fallbackTop = fallbackResults.isEmpty() ? null : fallbackResults.get(0);
-            HitDecision fallbackDecision = hitRuleEngine.decide(fallbackTop == null ? 0.0 : fallbackTop.finalScore());
-            if (fallbackTop != null && (topResult == null || fallbackTop.finalScore() > topResult.finalScore())) {
-                log.info("模块过滤检索未命中，使用全库兜底结果。moduleType={}, filteredScore={}, fallbackScore={}",
-                        moduleType,
-                        topResult == null ? 0.0 : topResult.finalScore(),
-                        fallbackTop.finalScore());
-                results = fallbackResults;
-                topResult = fallbackTop;
-                hitDecision = fallbackDecision;
-            }
-        }
-
         double topScore = topResult == null ? 0.0 : topResult.finalScore();
         long responseTimeMs = System.currentTimeMillis() - start;
         saveHitRecord(query, moduleType, userId, sessionId, topResult, hitDecision, responseTimeMs);

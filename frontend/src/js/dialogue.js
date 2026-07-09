@@ -2,6 +2,7 @@ import { ref, onMounted, nextTick } from 'vue'
 import { apiForm, apiGet, apiUpload } from './adminApi'
 
 const HISTORY_STORAGE_KEY = 'chat_conversations'
+const CONTACT_URL = 'https://jw.neusoft.edu.cn/25565/'
 
 export default {
   name: 'Dialogue',
@@ -133,6 +134,21 @@ export default {
     const formatDuration = (durationMs) => {
       const seconds = Math.max(0, Number(durationMs || 0) / 1000)
       return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} 秒`
+    }
+
+    const canShowFeedback = (msg) => {
+      return msg?.type === 'bot' && msg.kind !== 'faq' && msg.answerSource !== 'COMMON_DIRECT'
+    }
+
+    const markResolved = (msg) => {
+      msg.feedback = 'resolved'
+      persistHistory()
+    }
+
+    const markUnresolved = (msg) => {
+      msg.feedback = 'unresolved'
+      persistHistory()
+      window.location.href = CONTACT_URL
     }
 
     const persistHistory = () => {
@@ -281,7 +297,6 @@ export default {
     }
 
     onMounted(() => {
-      loadSuggestedQuestions()
       if (props.initialMessages.length) {
         messages.value = props.initialMessages.map(msg => ({ ...msg }))
         scrollToBottom()
@@ -303,6 +318,9 @@ export default {
       handleChatEnter,
       formatContent,
       formatDuration,
+      canShowFeedback,
+      markResolved,
+      markUnresolved,
       handleSuggestedQuestion,
       toggleVoiceRecording,
       sendMessage

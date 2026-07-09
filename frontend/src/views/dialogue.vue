@@ -19,24 +19,6 @@
            <div class="msg-avatar">✨</div>
            <div class="msg-bubble">你好，我是你的智能助手 ✨<br/>有什么想聊的，随时告诉我。</div>
          </div>
-         <div v-if="suggestedQuestions.length" class="message bot-message">
-           <div class="msg-avatar">✨</div>
-           <div class="msg-bubble faq-bubble">
-             <div class="faq-title">热门问题</div>
-             <div class="faq-list">
-               <button
-                 v-for="(item, index) in suggestedQuestions"
-                 :key="item.id || item.questionText || index"
-                 class="faq-item"
-                 @click="handleSuggestedQuestion(item)"
-               >
-                 <span class="faq-index">{{ index + 1 }}</span>
-                 <span>{{ item.questionText }}</span>
-                 <em v-if="item.value">点击 {{ item.value }}</em>
-               </button>
-             </div>
-           </div>
-         </div>
          <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.type === 'user' ? 'user-message' : 'bot-message']">
             <div v-if="msg.type === 'bot'" class="msg-avatar">✨</div>
             <div v-if="msg.kind === 'faq'" class="msg-bubble faq-bubble">
@@ -59,6 +41,18 @@
               <audio v-if="msg.mediaUrl" class="msg-audio" controls :src="msg.mediaUrl"></audio>
               <div v-if="msg.type === 'bot' && msg.durationMs !== undefined" class="msg-duration">
                 已处理 {{ formatDuration(msg.durationMs) }}
+              </div>
+              <div v-if="canShowFeedback(msg)" class="msg-feedback">
+                <button
+                  type="button"
+                  :class="{ active: msg.feedback === 'resolved' }"
+                  @click="markResolved(msg)"
+                >已解决</button>
+                <button
+                  type="button"
+                  :class="{ active: msg.feedback === 'unresolved' }"
+                  @click="markUnresolved(msg)"
+                >未解决</button>
               </div>
             </div>
          </div>

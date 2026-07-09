@@ -9,6 +9,9 @@ import me.rainhouse.qasystem.common.result.Result;
 import me.rainhouse.qasystem.entity.Survey;
 import me.rainhouse.qasystem.entity.SurveyTemplate;
 import me.rainhouse.qasystem.service.SurveyService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -143,6 +148,19 @@ public class SurveyController {
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
+    }
+
+    @GetMapping("/admin/{surveyId}/submissions/export")
+    public ResponseEntity<byte[]> exportSubmissions(@PathVariable Long surveyId,
+                                                    HttpServletRequest request) {
+        requireSurveyManager(request);
+        byte[] bytes = surveyService.exportSubmissionsExcel(surveyId);
+        String filename = URLEncoder.encode("survey-" + surveyId + "-submissions.xlsx", StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + filename)
+                .body(bytes);
     }
 
     @DeleteMapping("/admin/submissions/{submissionId}")

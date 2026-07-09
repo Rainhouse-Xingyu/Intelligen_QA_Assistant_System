@@ -14,10 +14,22 @@ export default {
     const logoRef = ref(null)
     const logoTone = ref('logo--dark')
     const commonQuestions = ref([])
+    const hotQuestions = ref([])
+    const commonQuestionModule = ref('')
+    const hotBubbleVisible = ref(false)
+    const mascotPosition = ref({ x: 28, y: 96 })
+    const mascotDragging = ref(false)
+    let hotBubbleTimer = 0
+    let dragOffset = { x: 0, y: 0 }
     const categories = [
       { label: '考务', value: '考务通知' },
       { label: '教学', value: '教学运行' },
+      { label: '学业', value: '学业帮扶' },
       { label: '心理', value: '心理辅导' }
+    ]
+    const commonQuestionCategories = [
+      { label: '全部', value: '' },
+      ...categories
     ]
 
     // --- Login state ---
@@ -147,13 +159,42 @@ export default {
 
     const loadCommonQuestions = async () => {
       try {
-        const data = await apiGet('/api/chat/common-questions', { limit: 8 })
+        const params = { limit: 8 }
+        if (commonQuestionModule.value) {
+          params.moduleType = commonQuestionModule.value
+        }
+        const data = await apiGet('/api/chat/common-questions', params)
         commonQuestions.value = Array.isArray(data)
           ? data.map(normalizeQuestionItem).filter(item => item.questionText).slice(0, 8)
           : []
       } catch {
         commonQuestions.value = []
       }
+    }
+
+    const loadHotQuestions = async () => {
+      try {
+        const data = await apiGet('/api/chat/suggested-questions', { limit: 5 })
+        hotQuestions.value = Array.isArray(data)
+          ? data.map(normalizeQuestionItem).filter(item => item.questionText).slice(0, 5)
+          : []
+      } catch {
+        hotQuestions.value = []
+      }
+    }
+
+    const showHotBubble = () => {
+      if (!hotQuestions.value.length) return
+      hotBubbleVisible.value = true
+      window.clearTimeout(hotBubbleTimer)
+      hotBubbleTimer = window.setTimeout(() => {
+        hotBubbleVisible.value = false
+      }, 5000)
+    }
+
+    const changeCommonQuestionModule = async (moduleType) => {
+      commonQuestionModule.value = moduleType
+      await loadCommonQuestions()
     }
 
     const handleCommonQuestion = (item) => {
@@ -164,6 +205,17 @@ export default {
         selectedCategory.value = normalized.moduleType
       }
       handleSendFromHome(normalized)
+    }
+
+    const handleHotQuestion = (item) => {
+      const normalized = normalizeQuestionItem(item)
+      if (!normalized.questionText) return
+      if (normalized.moduleType) {
+        selectedCategory.value = normalized.moduleType
+      }
+      question.value = normalized.questionText
+      handleSendFromHome(normalized)
+      hotBubbleVisible.value = false
     }
 
     // --- Auth methods ---
@@ -194,6 +246,8 @@ export default {
         isLoggedIn.value = true
         loadConversations()
         await loadSurveyStatus()
+        await loadHotQuestions()
+        showHotBubble()
       } catch {
         clearAuth()
       }
@@ -241,6 +295,39 @@ export default {
 
     const toggleCategory = (category) => {
       selectedCategory.value = selectedCategory.value === category ? null : category
+    }
+
+    const startMascotDrag = (event) => {
+      const pointer = event.touches?.[0] || event
+      mascotDragging.value = true
+      dragOffset = {
+        x: pointer.clientX - mascotPosition.value.x,
+        y: pointer.clientY - mascotPosition.value.y
+      }
+      window.addEventListener('mousemove', onMascotDrag)
+      window.addEventListener('mouseup', stopMascotDrag)
+      window.addEventListener('touchmove', onMascotDrag, { passive: false })
+      window.addEventListener('touchend', stopMascotDrag)
+    }
+
+    const onMascotDrag = (event) => {
+      if (!mascotDragging.value) return
+      event.preventDefault?.()
+      const pointer = event.touches?.[0] || event
+      const maxX = Math.max(0, window.innerWidth - 86)
+      const maxY = Math.max(0, window.innerHeight - 86)
+      mascotPosition.value = {
+        x: Math.min(maxX, Math.max(0, pointer.clientX - dragOffset.x)),
+        y: Math.min(maxY, Math.max(0, pointer.clientY - dragOffset.y))
+      }
+    }
+
+    const stopMascotDrag = () => {
+      mascotDragging.value = false
+      window.removeEventListener('mousemove', onMascotDrag)
+      window.removeEventListener('mouseup', stopMascotDrag)
+      window.removeEventListener('touchmove', onMascotDrag)
+      window.removeEventListener('touchend', stopMascotDrag)
     }
 
     const handleSendFromHome = (directItem = null) => {
@@ -307,6 +394,8 @@ export default {
         window.cancelAnimationFrame(logoToneFrame)
       }
       window.clearInterval(logoToneTimer)
+      window.clearTimeout(hotBubbleTimer)
+      stopMascotDrag()
     })
 
     return {
@@ -316,6 +405,12 @@ export default {
       logoRef,
       logoTone,
       commonQuestions,
+      hotQuestions,
+      commonQuestionModule,
+      commonQuestionCategories,
+      hotBubbleVisible,
+      mascotPosition,
+      mascotDragging,
       categories,
       isLoggedIn,
       userInfo,
@@ -328,7 +423,11 @@ export default {
       handleSurveyClick,
       toggleCategory,
       loadCommonQuestions,
+      changeCommonQuestionModule,
       handleCommonQuestion,
+      handleHotQuestion,
+      showHotBubble,
+      startMascotDrag,
       newConversation,
       selectConversation,
       deleteConversation

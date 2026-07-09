@@ -131,6 +131,14 @@
             <h2>常见问题</h2>
             <button class="refresh-common-btn" @click="loadCommonQuestions">换一批</button>
           </div>
+          <div class="common-category-tabs">
+            <button
+              v-for="cat in commonQuestionCategories"
+              :key="cat.value || 'all'"
+              :class="{ active: commonQuestionModule === cat.value }"
+              @click="changeCommonQuestionModule(cat.value)"
+            >{{ cat.label }}</button>
+          </div>
           <div class="common-question-grid">
             <button
               v-for="(item, index) in commonQuestions"
@@ -181,6 +189,14 @@
           <h2>常见问题</h2>
           <button class="refresh-common-btn" @click="loadCommonQuestions">换一批</button>
         </div>
+        <div class="common-category-tabs">
+          <button
+            v-for="cat in commonQuestionCategories"
+            :key="cat.value || 'all'"
+            :class="{ active: commonQuestionModule === cat.value }"
+            @click="changeCommonQuestionModule(cat.value)"
+          >{{ cat.label }}</button>
+        </div>
         <div class="common-question-grid">
           <button
             v-for="(item, index) in commonQuestions"
@@ -194,6 +210,32 @@
         </div>
       </section>
     </main>
+
+    <div
+      v-if="isLoggedIn && isStudent"
+      class="mascot-hotspot"
+      :class="{ dragging: mascotDragging }"
+      :style="{ left: `${mascotPosition.x}px`, top: `${mascotPosition.y}px` }"
+      @mousedown.prevent="startMascotDrag"
+      @touchstart.prevent="startMascotDrag"
+      @mouseenter="showHotBubble"
+    >
+      <div class="mascot-bubble" v-if="hotBubbleVisible && hotQuestions.length">
+        <div class="mascot-bubble-title">热门问题</div>
+        <button
+          v-for="(item, index) in hotQuestions"
+          :key="item.id || item.questionText || index"
+          type="button"
+          @click.stop="handleHotQuestion(item)"
+        >
+          <span>{{ index + 1 }}</span>
+          <strong>{{ item.questionText }}</strong>
+        </button>
+      </div>
+      <div class="mascot-avatar" title="东小龙">
+        <span>东</span>
+      </div>
+    </div>
   </div>
 </template>
 

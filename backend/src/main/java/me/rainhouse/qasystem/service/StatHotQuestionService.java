@@ -1,6 +1,7 @@
 package me.rainhouse.qasystem.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import me.rainhouse.qasystem.entity.HotQuestionConfig;
 import me.rainhouse.qasystem.entity.StatHotQuestion;
 
 import java.util.List;
@@ -31,9 +32,26 @@ public interface StatHotQuestionService extends IService<StatHotQuestion> {
     List<Map<String, Object>> getSuggestedQuestionAnswers(int limit);
 
     /**
+     * 获取首页热门问题。若管理员配置的热门问题仍在有效期内，优先返回配置项；
+     * 否则按近 30 天点击/命中频次排序返回。
+     */
+    List<Map<String, Object>> getHomeHotQuestionAnswers(int limit);
+
+    List<HotQuestionConfig> listHotQuestionConfigs();
+
+    HotQuestionConfig saveHotQuestionConfig(HotQuestionConfig config, Long userId);
+
+    boolean deleteHotQuestionConfig(Long id);
+
+    /**
      * 从知识库启用问答中随机取常见问题，供首页展示。
      */
     List<Map<String, Object>> getRandomQuestionAnswers(int limit);
+
+    /**
+     * 从知识库启用问答中随机取常见问题，可按模块/分类过滤。
+     */
+    List<Map<String, Object>> getRandomQuestionAnswers(int limit, String moduleType);
 
     /**
      * 重建指定日期的常见问题统计。

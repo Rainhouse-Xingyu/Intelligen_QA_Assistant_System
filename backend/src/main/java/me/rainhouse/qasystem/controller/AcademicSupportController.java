@@ -3,9 +3,13 @@ package me.rainhouse.qasystem.controller;
 import me.rainhouse.qasystem.common.result.Result;
 import me.rainhouse.qasystem.entity.AcademicWarningRecord;
 import me.rainhouse.qasystem.entity.StudentProfile;
+import me.rainhouse.qasystem.entity.StudentWarningLevel;
 import me.rainhouse.qasystem.service.AcademicSupportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/academic")
@@ -41,6 +45,29 @@ public class AcademicSupportController {
     public Result<String> updateProfile(@RequestBody StudentProfile profile) {
         academicSupportService.saveOrUpdateProfile(profile);
         return Result.success("画像数据更新成功");
+    }
+
+    @GetMapping("/warning-levels")
+    public Result<List<StudentWarningLevel>> listWarningLevels() {
+        return Result.success(academicSupportService.listWarningLevels());
+    }
+
+    @PostMapping("/warning-levels")
+    public Result<StudentWarningLevel> saveWarningLevel(@RequestBody StudentWarningLevel warningLevel) {
+        try {
+            return Result.success(academicSupportService.saveWarningLevel(warningLevel));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @PostMapping("/warning-levels/import")
+    public Result<Integer> importWarningLevels(@RequestParam("file") MultipartFile file) {
+        try {
+            return Result.success(academicSupportService.importWarningLevels(file));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     /**

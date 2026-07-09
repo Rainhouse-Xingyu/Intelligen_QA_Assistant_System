@@ -4,25 +4,43 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import me.rainhouse.qasystem.entity.AcademicWarningRecord;
 import me.rainhouse.qasystem.entity.StudentProfile;
+import me.rainhouse.qasystem.entity.StudentWarningLevel;
 import me.rainhouse.qasystem.mapper.AcademicWarningRecordMapper;
 import me.rainhouse.qasystem.mapper.StudentProfileMapper;
+import me.rainhouse.qasystem.mapper.StudentWarningLevelMapper;
 import me.rainhouse.qasystem.service.AcademicSupportService;
 import me.rainhouse.qasystem.service.CozeService;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
 
 @Service
 public class AcademicSupportServiceImpl extends ServiceImpl<AcademicWarningRecordMapper, AcademicWarningRecord> implements AcademicSupportService {
+
+    private static final Set<String> WARNING_LEVELS = Set.of("正常", "黄色预警", "橙色预警", "红色预警");
+    private final DataFormatter dataFormatter = new DataFormatter();
 
     @Autowired
     private StudentProfileMapper studentProfileMapper;
 
     @Autowired
     private CozeService cozeService;
+
+    @Autowired
+    private StudentWarningLevelMapper studentWarningLevelMapper;
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -91,6 +109,99 @@ public class AcademicSupportServiceImpl extends ServiceImpl<AcademicWarningRecor
             profile.setUpdatedAt(LocalDateTime.now());
             studentProfileMapper.updateById(profile);
         }
+    }
+
+    @Override
+    public List<StudentWarningLevel> listWarningLevels() {
+        return studentWarningLevelMapper.selectList(new QueryWrapper<StudentWarningLevel>()
+                .orderByDesc("created_at")
+                .last("LIMIT 200"));
+    }
+
+    @Override
+    public StudentWarningLevel saveWarningLevel(StudentWarningLevel warningLevel) {
+        if (warningLevel == null) {
+            throw new IllegalArgumentException("缺少预警等级信息");
+        }
+        normalizeWarningLevel(warningLevel);
+        StudentWarningLevel existing = null;
+        if (StringUtils.hasText(warningLevel.getStudentNo())) {
+            existing = studentWarningLevelMapper.selectOne(new QueryWrapper<StudentWarningLevel>()
+                    .eq("student_no", warningLevel.getStudentNo())
+                    .last("LIMIT 1"));
+        }
+        if (existing == null && warningLevel.getId() != null) {
+            existing = studentWarningLevelMapper.selectById(warningLevel.getId());
+        }
+        if (existing == null) {
+            warningLevel.setCreatedAt(LocalDateTime.now());
+            studentWarningLevelMapper.insert(warningLevel);
+        } else {
+            warningLevel.setId(existing.getId());
+            warningLevel.setCreatedAt(existing.getCreatedAt());
+            studentWarningLevelMapper.updateById(warningLevel);
+        }
+        return warningLevel;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public int importWarningLevels(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("上传文件不能为空");
+        }
+        int count = 0;
+        try (InputStream inputStream = file.getInputStream();
+             Workbook workbook = WorkbookFactory.create(inputStream)) {
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null) {
+                return 0;
+            }
+            for (int rowIndex = sheet.getFirstRowNum() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+                if (row == null) {
+                    continue;
+                }
+                StudentWarningLevel warningLevel = new StudentWarningLevel();
+                warningLevel.setStudentNo(readCell(row, 0));
+                warningLevel.setClassName(readCell(row, 1));
+                warningLevel.setStudentName(readCell(row, 2));
+                warningLevel.setWarningLevel(readCell(row, 3));
+                if (!StringUtils.hasText(warningLevel.getStudentNo())
+                        && !StringUtils.hasText(warningLevel.getStudentName())) {
+                    continue;
+                }
+                saveWarningLevel(warningLevel);
+                count++;
+            }
+            return count;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("预警等级导入失败: " + e.getMessage(), e);
+        }
+    }
+
+    private void normalizeWarningLevel(StudentWarningLevel warningLevel) {
+        warningLevel.setStudentNo(trim(warningLevel.getStudentNo()));
+        warningLevel.setClassName(trim(warningLevel.getClassName()));
+        warningLevel.setStudentName(trim(warningLevel.getStudentName()));
+        warningLevel.setWarningLevel(trim(warningLevel.getWarningLevel()));
+        if (!StringUtils.hasText(warningLevel.getStudentNo())) {
+            throw new IllegalArgumentException("学号不能为空");
+        }
+        if (!StringUtils.hasText(warningLevel.getStudentName())) {
+            throw new IllegalArgumentException("姓名不能为空");
+        }
+        if (!WARNING_LEVELS.contains(warningLevel.getWarningLevel())) {
+            throw new IllegalArgumentException("预警等级仅支持：正常、黄色预警、橙色预警、红色预警");
+        }
+    }
+
+    private String readCell(Row row, int index) {
+        return trim(dataFormatter.formatCellValue(row.getCell(index)));
+    }
+
+    private String trim(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     @Override

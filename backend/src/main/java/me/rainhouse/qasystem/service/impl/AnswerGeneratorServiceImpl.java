@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.rainhouse.qasystem.config.AiModelProperties;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
 import me.rainhouse.qasystem.service.ChatMemoryService;
+import me.rainhouse.qasystem.service.DeepSeekClient;
 import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
@@ -18,12 +19,15 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
 
     private final LocalModelClient localModelClient;
     private final ChatMemoryService chatMemoryService;
+    private final DeepSeekClient deepSeekClient;
 
     public AnswerGeneratorServiceImpl(AiModelProperties aiModelProperties,
                                       LocalModelClient localModelClient,
-                                      ChatMemoryService chatMemoryService) {
+                                      ChatMemoryService chatMemoryService,
+                                      DeepSeekClient deepSeekClient) {
         this.localModelClient = localModelClient;
         this.chatMemoryService = chatMemoryService;
+        this.deepSeekClient = deepSeekClient;
         aiModelProperties.getQwenGeneratorPath();
     }
 
@@ -45,6 +49,24 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
             log.info("[AI] /generate skipped: hitStatus={}, topScore={}",
                     searchResponse.hitStatus(), searchResponse.topScore());
             return null;
+        }
+
+        if (deepSeekClient.enabled()) {
+            try {
+                log.info("[AI] /generate call DeepSeek: hitStatus={}, topScore={}, references={}",
+                        searchResponse.hitStatus(), searchResponse.topScore(), searchResponse.results().size());
+                String answer = deepSeekClient.generate(
+                        chatMemoryService.buildGenerationQuestion(originalQuestion, memoryContext),
+                        rewriteQuestion,
+                        memoryContext,
+                        searchResponse.results());
+                if (StringUtils.hasText(answer)) {
+                    return answer;
+                }
+                log.info("[AI] /generate DeepSeek returned empty text, fallback to local model");
+            } catch (Exception ex) {
+                log.warn("[AI] /generate DeepSeek failed, fallback to local model: {}", ex.getMessage());
+            }
         }
 
         if (localModelClient.enabled()) {
