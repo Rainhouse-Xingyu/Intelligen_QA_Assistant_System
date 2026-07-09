@@ -1,6 +1,9 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiGet, apiForm } from './adminApi'
 
+const HISTORY_RETENTION_DAYS = 30
+const HISTORY_RETENTION_MS = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000
+
 export default {
   name: 'Home',
   emits: ['start-chat', 'navigate-login', 'navigate-survey'],
@@ -10,6 +13,7 @@ export default {
     const shakeAlert = ref(false)
     const logoRef = ref(null)
     const logoTone = ref('logo--dark')
+    const commonQuestions = ref([])
     const categories = [
       { label: '考务', value: '考务通知' },
       { label: '教学', value: '教学运行' },
@@ -89,7 +93,14 @@ export default {
     const loadConversations = () => {
       try {
         const stored = localStorage.getItem('chat_conversations')
-        conversations.value = stored ? JSON.parse(stored) : []
+        const parsed = stored ? JSON.parse(stored) : []
+        const now = Date.now()
+        conversations.value = (Array.isArray(parsed) ? parsed : [])
+          .filter(conv => {
+            const time = new Date(conv.updatedAt || conv.createdAt || 0).getTime()
+            return Number.isFinite(time) && now - time <= HISTORY_RETENTION_MS
+          })
+        saveConversations()
       } catch {
         conversations.value = []
       }
@@ -105,16 +116,54 @@ export default {
     }
 
     const selectConversation = (conv) => {
+      const fallbackQuestion = conv.firstQuestion || conv.title || ''
+      const restoredMessages = Array.isArray(conv.messages) && conv.messages.length
+        ? conv.messages
+        : fallbackQuestion
+          ? [
+              { type: 'user', content: fallbackQuestion },
+              { type: 'bot', content: '这是之前的历史提问，当前本地没有保存当时的回答。你可以继续追问，我会接着这条会话帮你处理。' }
+            ]
+          : []
       emit('start-chat', {
-        question: conv.firstQuestion || conv.title,
+        question: '',
         category: conv.category || null,
-        historyId: conv.id
+        historyId: conv.id,
+        messages: restoredMessages
       })
     }
 
     const deleteConversation = (id) => {
       conversations.value = conversations.value.filter(c => c.id !== id)
       saveConversations()
+    }
+
+    const normalizeQuestionItem = (item) => ({
+      ...item,
+      questionText: item.questionText || item.question_text || item.name || item.question || '',
+      answerText: item.answerText || item.answer_text || item.answer || '',
+      moduleType: item.moduleType || item.module_type || ''
+    })
+
+    const loadCommonQuestions = async () => {
+      try {
+        const data = await apiGet('/api/chat/common-questions', { limit: 8 })
+        commonQuestions.value = Array.isArray(data)
+          ? data.map(normalizeQuestionItem).filter(item => item.questionText).slice(0, 8)
+          : []
+      } catch {
+        commonQuestions.value = []
+      }
+    }
+
+    const handleCommonQuestion = (item) => {
+      const normalized = normalizeQuestionItem(item)
+      if (!normalized.questionText) return
+      question.value = normalized.questionText
+      if (normalized.moduleType) {
+        selectedCategory.value = normalized.moduleType
+      }
+      handleSendFromHome(normalized)
     }
 
     // --- Auth methods ---
@@ -190,31 +239,43 @@ export default {
       emit('navigate-survey')
     }
 
-    const handleSendFromHome = () => {
+    const toggleCategory = (category) => {
+      selectedCategory.value = selectedCategory.value === category ? null : category
+    }
+
+    const handleSendFromHome = (directItem = null) => {
       if (!question.value.trim()) return
-      if (!selectedCategory.value) {
-        shakeAlert.value = true
-        setTimeout(() => {
-          shakeAlert.value = false
-        }, 500)
-        return
-      }
+      const trimmedQuestion = question.value.trim()
+      const directAnswer = directItem?.answerText?.trim()
+      const initialMessages = directAnswer
+        ? [
+            { type: 'user', content: trimmedQuestion },
+            { type: 'bot', content: directAnswer, durationMs: 0, answerSource: 'COMMON_DIRECT' }
+          ]
+        : []
+
+      let historyId = ''
 
       if (isLoggedIn.value) {
+        historyId = 'conv_' + Date.now()
         const conv = {
-          id: 'conv_' + Date.now(),
-          title: question.value.trim().substring(0, 30),
-          firstQuestion: question.value.trim(),
+          id: historyId,
+          title: trimmedQuestion.substring(0, 30),
+          firstQuestion: trimmedQuestion,
           category: selectedCategory.value,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: initialMessages
         }
         conversations.value.unshift(conv)
         saveConversations()
       }
 
       emit('start-chat', {
-        question: question.value,
-        category: selectedCategory.value
+        question: directAnswer ? '' : trimmedQuestion,
+        category: selectedCategory.value,
+        historyId,
+        messages: initialMessages
       })
       question.value = ''
     }
@@ -232,6 +293,7 @@ export default {
 
     onMounted(() => {
       restoreSession()
+      loadCommonQuestions()
       nextTick(scheduleLogoToneUpdate)
       window.addEventListener('resize', scheduleLogoToneUpdate)
       window.addEventListener('scroll', scheduleLogoToneUpdate, true)
@@ -253,6 +315,7 @@ export default {
       shakeAlert,
       logoRef,
       logoTone,
+      commonQuestions,
       categories,
       isLoggedIn,
       userInfo,
@@ -263,6 +326,9 @@ export default {
       handleSendFromHome,
       handleLoginClick,
       handleSurveyClick,
+      toggleCategory,
+      loadCommonQuestions,
+      handleCommonQuestion,
       newConversation,
       selectConversation,
       deleteConversation

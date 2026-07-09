@@ -38,7 +38,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     private static final int LEXICAL_CANDIDATE_LIMIT = 40;
     private static final int MAX_QUERY_TERMS = 12;
     private static final Map<String, List<String>> MODULE_ALIASES = Map.of(
-            "考务通知", List.of("考务通知", "考务", "考试", "考试通知"),
+            "考务通知", List.of("考务通知", "考务", "考试", "考试通知", "四六级"),
             "教学运行", List.of("教学运行", "教学", "课程", "选课", "课表"),
             "学业帮扶", List.of("学业帮扶", "学业支持", "学业", "帮扶", "预警"),
             "心理辅导", List.of("心理辅导", "心理", "心理咨询", "心理健康"),
@@ -190,9 +190,11 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
     private String embeddingText(KbQaEntry entry) {
         String question = entry.getQuestion() == null ? "" : entry.getQuestion().trim();
-        String answer = entry.getAnswer() == null ? "" : entry.getAnswer().trim();
         String categoryPath = categoryPath(entry);
-        return "分类路径：" + categoryPath + "\n问题：" + question + "\n问题：" + question + "\n答案：" + answer;
+        if (StringUtils.hasText(categoryPath)) {
+            return "分类路径：" + categoryPath + "\n标准问题：" + question;
+        }
+        return "标准问题：" + question;
     }
 
     private String categoryPath(KbQaEntry entry) {
@@ -256,7 +258,11 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 }
                 group.like(KbQaEntry::getQuestion, term)
                         .or()
-                        .like(KbQaEntry::getAnswer, term);
+                        .like(KbQaEntry::getCategoryL1Name, term)
+                        .or()
+                        .like(KbQaEntry::getCategoryL2Name, term)
+                        .or()
+                        .like(KbQaEntry::getCategoryL3Name, term);
             }
         });
 

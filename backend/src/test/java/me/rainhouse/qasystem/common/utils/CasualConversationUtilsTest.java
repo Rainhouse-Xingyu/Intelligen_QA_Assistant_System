@@ -12,6 +12,9 @@ class CasualConversationUtilsTest {
         assertTrue(CasualConversationUtils.isCasualOnly("你好"));
         assertTrue(CasualConversationUtils.isCasualOnly("拜拜啦"));
         assertTrue(CasualConversationUtils.isCasualOnly("谢谢"));
+        assertTrue(CasualConversationUtils.isCasualOnly("谢啦"));
+        assertTrue(CasualConversationUtils.isCasualOnly("麻烦啦"));
+        assertTrue(CasualConversationUtils.isCasualOnly("有人不"));
         assertTrue(CasualConversationUtils.isCasualOnly("嗯嗯"));
     }
 

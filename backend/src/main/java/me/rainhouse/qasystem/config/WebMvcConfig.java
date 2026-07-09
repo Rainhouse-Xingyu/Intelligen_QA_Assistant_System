@@ -30,6 +30,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/auth/login", 
                         "/api/auth/sso/callback",
+                        "/api/chat/common-questions",
+                        "/api/chat/suggested-questions",
+                        "/api/stat/hot-questions",
                         "/api/wechat/portal",   // 接收微信事件
                         "/api/wechat/login"     // 微信免密授权
                 ); 

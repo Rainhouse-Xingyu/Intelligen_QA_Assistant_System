@@ -34,19 +34,33 @@ public final class CasualConversationUtils {
     public static String directReply(String text) {
         String compact = compact(text);
         if (isFarewell(compact)) {
-            return "好呀，下次见！有问题随时来找我，我一直在线。";
+            return pick(compact,
+                    "好呀，下次见！有问题随时来找我，我一直在线。",
+                    "先忙你的，回头有问题再来找我就行。",
+                    "收到，那我们下次聊，祝你今天顺顺利利。");
         }
         if (isThanks(compact)) {
-            return "不客气呀！能帮上忙就好，有新问题继续丢给我。";
+            return pick(compact,
+                    "不客气呀！能帮上忙就好，有新问题继续丢给我。",
+                    "不用客气，能帮到你我也很开心。",
+                    "小事小事，还有别的问题也可以继续问我。",
+                    "收到你的感谢啦，后面遇到问题随时来问。");
         }
         if (isAcknowledgement(compact)) {
-            return "收到收到！还有想问的就继续发我。";
+            return pick(compact,
+                    "收到收到！还有想问的就继续发我。",
+                    "好嘞，我在这儿，有新问题直接说。",
+                    "明白，有需要再继续问我就行。");
         }
-        return "嗨，来啦！今天想查选课、考试、成绩还是学业问题？直接问我就行。";
+        return pick(compact,
+                "嗨，来啦！今天想查选课、考试、成绩还是学业问题？直接问我就行。",
+                "你好呀，我在。可以直接把问题发给我，不用先选分类。",
+                "同学你好，有教务、考试、学业或心理方面的问题都可以直接问我。",
+                "来了来了，想问什么直接说，我帮你一起看。");
     }
 
     private static boolean isGreeting(String compact) {
-        return compact.matches("(老师|同学|小助手|助手)?(你好|您好|哈喽|hello|hi|hey|嗨|早上好|中午好|下午好|晚上好|早|在吗|有人吗|在不在)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*")
+        return compact.matches("(老师|同学|小助手|助手)?(你好|您好|哈喽|hello|hi|hey|嗨|早上好|中午好|下午好|晚上好|早|早安|午安|晚安|在吗|有人吗|在不在|有人不)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*")
                 || compact.matches("(你好|您好|哈喽|hello|hi|hey|嗨)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*(在吗|有人吗|在不在)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*");
     }
 
@@ -55,7 +69,7 @@ public final class CasualConversationUtils {
     }
 
     private static boolean isThanks(String compact) {
-        return compact.matches("(谢谢|谢谢你|谢谢啦|感谢|多谢|辛苦了|麻烦你了|太感谢了)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*");
+        return compact.matches("(谢谢|谢谢你|谢谢啦|感谢|感谢你|多谢|辛苦了|麻烦你了|麻烦啦|太感谢了|帮大忙了|谢了|谢啦|thx|thanks)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*");
     }
 
     private static boolean isAcknowledgement(String compact) {
@@ -78,5 +92,13 @@ public final class CasualConversationUtils {
             }
         }
         return false;
+    }
+
+    private static String pick(String seed, String... replies) {
+        if (replies.length == 0) {
+            return "";
+        }
+        int index = Math.floorMod(seed == null ? 0 : seed.hashCode(), replies.length);
+        return replies[index];
     }
 }

@@ -8,11 +8,11 @@ import me.rainhouse.qasystem.mapper.QuestionRawMapper;
 import me.rainhouse.qasystem.service.AiChatService;
 import me.rainhouse.qasystem.service.AnswerGeneratorService;
 import me.rainhouse.qasystem.service.ChatMemoryService;
-import me.rainhouse.qasystem.service.CozeService;
 import me.rainhouse.qasystem.service.IntentClassifierService;
 import me.rainhouse.qasystem.service.QueryRewriteService;
 import me.rainhouse.qasystem.service.UnrecognizedQueryService;
 import me.rainhouse.qasystem.service.VectorSearchService;
+import me.rainhouse.qasystem.service.localmodel.LocalModelClient;
 import me.rainhouse.qasystem.service.vector.VectorSearchResponse;
 import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import org.springframework.stereotype.Service;
@@ -26,12 +26,15 @@ import java.util.Locale;
 @Service
 public class AiChatServiceImpl implements AiChatService {
 
+    private static final String AI_INTERPRETATION_NOTICE =
+            "以上答复含有AI解读成分，如有未尽事宜或其他问题，请具体咨询教务部联系人https://jw.neusoft.edu.cn/25565/";
+
     private final QuestionRawMapper questionRawMapper;
     private final QueryRewriteService queryRewriteService;
     private final IntentClassifierService intentClassifierService;
     private final VectorSearchService vectorSearchService;
     private final AnswerGeneratorService answerGeneratorService;
-    private final CozeService cozeService;
+    private final LocalModelClient localModelClient;
     private final UnrecognizedQueryService unrecognizedQueryService;
     private final ChatMemoryService chatMemoryService;
 
@@ -40,7 +43,7 @@ public class AiChatServiceImpl implements AiChatService {
                              IntentClassifierService intentClassifierService,
                              VectorSearchService vectorSearchService,
                              AnswerGeneratorService answerGeneratorService,
-                             CozeService cozeService,
+                             LocalModelClient localModelClient,
                              UnrecognizedQueryService unrecognizedQueryService,
                              ChatMemoryService chatMemoryService) {
         this.questionRawMapper = questionRawMapper;
@@ -48,7 +51,7 @@ public class AiChatServiceImpl implements AiChatService {
         this.intentClassifierService = intentClassifierService;
         this.vectorSearchService = vectorSearchService;
         this.answerGeneratorService = answerGeneratorService;
-        this.cozeService = cozeService;
+        this.localModelClient = localModelClient;
         this.unrecognizedQueryService = unrecognizedQueryService;
         this.chatMemoryService = chatMemoryService;
     }
@@ -78,8 +81,26 @@ public class AiChatServiceImpl implements AiChatService {
         String memoryContext = chatMemoryService.buildRecentContext(sessionId, query);
         String rewriteQuestion = queryRewriteService.rewrite(query);
         String retrievalQuestion = chatMemoryService.buildRetrievalQuery(rewriteQuestion, memoryContext);
-        String moduleType = intentClassifierService.classify(retrievalQuestion, selectedModuleType);
+        String moduleType = shouldRouteToPsychology(query, selectedModuleType)
+                ? "心理辅导"
+                : intentClassifierService.classify(retrievalQuestion, selectedModuleType);
         saveRawQuestion(userId, sessionId, query, moduleType);
+
+        if ("心理辅导".equals(moduleType)) {
+            String answer = generatePsychologicalAnswer(query);
+            return AiChatResponse.builder()
+                    .originalQuestion(query)
+                    .rewriteQuestion(rewriteQuestion)
+                    .moduleType(moduleType)
+                    .hitStatus(1)
+                    .hitLabel("心理指导")
+                    .topScore(1.0)
+                    .answer(answer)
+                    .answerSource("LOCAL_PSY")
+                    .responseTimeMs(System.currentTimeMillis() - start)
+                    .references(List.of())
+                    .build();
+        }
 
         VectorSearchResponse searchResponse = vectorSearchService.search(retrievalQuestion, moduleType, 3, userId, sessionId);
         String answer = answerGeneratorService.generate(query, rewriteQuestion, searchResponse, memoryContext);
@@ -109,7 +130,7 @@ public class AiChatServiceImpl implements AiChatService {
                 .hitLabel(searchResponse.hitLabel())
                 .topScore(searchResponse.topScore())
                 .topKnowledgeId(searchResponse.topKnowledgeId())
-                .answer(answer)
+                .answer(formatBusinessAnswer(answer, moduleType, query))
                 .answerSource(answerSource)
                 .responseTimeMs(System.currentTimeMillis() - start)
                 .references(searchResponse.results())
@@ -130,6 +151,43 @@ public class AiChatServiceImpl implements AiChatService {
                 .orElse(null);
     }
 
+    private String generatePsychologicalAnswer(String query) {
+        try {
+            String answer = localModelClient.psychologicalCounseling(query);
+            if (StringUtils.hasText(answer)) {
+                return answer;
+            }
+        } catch (Exception ex) {
+            log.warn("[AI] local psychological counseling failed, fallback to canned reply: {}", ex.getMessage());
+        }
+        return LocalModelClient.superFallbackPsychologicalCounseling(query);
+    }
+
+    private boolean shouldRouteToPsychology(String query, String selectedModuleType) {
+        if (StringUtils.hasText(selectedModuleType)) {
+            return false;
+        }
+        if (!StringUtils.hasText(query)) {
+            return false;
+        }
+        String text = normalizeForCompare(query);
+        return text.contains("心理")
+                || text.contains("焦虑")
+                || text.contains("压力大")
+                || text.contains("紧张")
+                || text.contains("烦躁")
+                || text.contains("难过")
+                || text.contains("崩溃")
+                || text.contains("失眠")
+                || text.contains("睡不着")
+                || text.contains("抑郁")
+                || text.contains("不开心")
+                || text.contains("想哭")
+                || text.contains("害怕")
+                || text.contains("孤独")
+                || text.contains("迷茫");
+    }
+
     private boolean isEchoAnswer(String query, String answer) {
         String normalizedQuery = normalizeForCompare(query);
         String normalizedAnswer = normalizeForCompare(answer);
@@ -139,6 +197,41 @@ public class AiChatServiceImpl implements AiChatService {
         return normalizedAnswer.equals(normalizedQuery)
                 || (normalizedAnswer.length() <= normalizedQuery.length() + 4
                 && normalizedAnswer.contains(normalizedQuery));
+    }
+
+    private String formatBusinessAnswer(String answer, String moduleType, String query) {
+        if (!StringUtils.hasText(answer)) {
+            return answer;
+        }
+        String normalizedAnswer = ensureTerminalPunctuation(answer.trim());
+        String closing = isExamQuestion(moduleType, query)
+                ? "祝您考试取得好成绩！"
+                : "谢谢！";
+        return "同学，你好！\n"
+                + "您所咨询的问题解答如下：" + normalizedAnswer + closing
+                + "\n\n"
+                + AI_INTERPRETATION_NOTICE;
+    }
+
+    private String ensureTerminalPunctuation(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.matches(".*[。！？!?；;.]$")
+                ? text
+                : text + "。";
+    }
+
+    private boolean isExamQuestion(String moduleType, String query) {
+        String text = ((moduleType == null ? "" : moduleType) + " " + (query == null ? "" : query)).toLowerCase(Locale.ROOT);
+        return text.contains("考务")
+                || text.contains("考试")
+                || text.contains("四六级")
+                || text.contains("四级")
+                || text.contains("六级")
+                || text.contains("补考")
+                || text.contains("缓考")
+                || text.contains("成绩");
     }
 
     private String normalizeForCompare(String text) {

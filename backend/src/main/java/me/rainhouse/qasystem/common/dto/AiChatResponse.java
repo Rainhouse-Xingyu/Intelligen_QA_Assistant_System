@@ -18,6 +18,8 @@ public class AiChatResponse {
     private Long topKnowledgeId;
     private String answer;
     private String answerSource;
+    private String recognizedText;
+    private String mediaUrl;
     private Long responseTimeMs;
     private List<VectorSearchResult> references;
 }
