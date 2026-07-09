@@ -8,17 +8,14 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("survey_answer")
-public class SurveyAnswer {
+@TableName("survey_template")
+public class SurveyTemplate {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long submissionId;
-    private Long surveyId;
-    private Long questionId;
-    private Long userId;
-    private String questionCode;
-    private String indicatorName;
-    private Integer numericAnswer;
-    private String textAnswer;
+    private String name;
+    private String description;
+    private String fileName;
+    private Long createdBy;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

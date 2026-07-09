@@ -13,10 +13,13 @@ public class SurveyQuestion {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long surveyId;
+    private Long templateQuestionId;
     private Integer questionNo;
+    private String questionCode;
+    private String indicatorName;
     private String questionText;
-    private Integer questionType; // 1-量表题, 2-文本题
-    private Integer required; // 0-选填, 1-必填
+    private Integer questionType;
+    private Integer required;
     private Integer sortOrder;
     private LocalDateTime createdAt;
 }

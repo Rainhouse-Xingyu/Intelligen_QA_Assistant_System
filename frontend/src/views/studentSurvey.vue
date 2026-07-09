@@ -4,13 +4,17 @@
       <button class="back-btn" @click="$emit('go-home')">返回首页</button>
       <div>
         <h1>问卷调查</h1>
-        <p>已发布的全校问卷会显示在这里，每份问卷只能提交一次</p>
+        <p>这里只显示当前需要填写的问卷，提交后将不再出现在待填写列表中</p>
       </div>
-      <button class="refresh-btn" :disabled="loading" @click="loadSurveys">刷新</button>
+      <button class="refresh-btn" :disabled="loading" @click="reloadAll">刷新</button>
     </header>
 
     <main class="survey-layout">
       <aside class="survey-list">
+        <div class="list-head">
+          <strong>待填写</strong>
+          <span>{{ surveys.length }} 份</span>
+        </div>
         <article
           v-for="item in surveys"
           :key="item.survey.id"
@@ -19,11 +23,11 @@
         >
           <div>
             <strong>{{ item.survey.title }}</strong>
-            <span>{{ formatTime(item.survey.publishedAt || item.survey.createdAt) }}</span>
+            <span>{{ formatTime(item.survey.startTime || item.survey.publishedAt || item.survey.createdAt) }}</span>
           </div>
-          <em :class="{ done: item.submitted }">{{ item.submitted ? '已提交' : '待填写' }}</em>
+          <em>待填写</em>
         </article>
-        <div v-if="surveys.length === 0" class="empty-state">暂无已发布问卷</div>
+        <div v-if="surveys.length === 0" class="empty-state">暂无待填写问卷</div>
       </aside>
 
       <section class="answer-panel">
@@ -32,11 +36,13 @@
           <div class="answer-head">
             <div>
               <h2>{{ current.survey.title }}</h2>
-              <p>{{ current.survey.description || '请根据实际情况完成问卷。' }}</p>
+              <p>{{ current.survey.purpose || current.survey.description || '请根据实际情况完成问卷。' }}</p>
+              <small>
+                结束时间：{{ formatTime(current.survey.endTime) }}
+                <span v-if="current.survey.scopeText"> · 范围：{{ current.survey.scopeText }}</span>
+              </small>
             </div>
-            <span :class="['status-pill', current.submitted ? 'done' : 'todo']">
-              {{ current.submitted ? '已提交' : '未提交' }}
-            </span>
+            <span class="status-pill todo">未提交</span>
           </div>
 
           <form class="question-list" @submit.prevent="submitSurvey">
@@ -54,7 +60,6 @@
                     type="radio"
                     :name="`q-${question.id}`"
                     :value="option.value"
-                    :disabled="current.submitted"
                   />
                   <strong>{{ option.value }}</strong>
                   <span>{{ option.label }}</span>
@@ -65,8 +70,7 @@
                 v-else
                 v-model="textAnswers[question.id]"
                 class="text-answer"
-                :disabled="current.submitted"
-                placeholder="可以写下你的期待，也可以留空"
+                placeholder="可以写下你的想法，也可以留空"
               ></textarea>
             </article>
 
@@ -74,13 +78,14 @@
 
             <div class="submit-row">
               <span>{{ current.questions.length }} 道题</span>
-              <button class="submit-btn" type="submit" :disabled="current.submitted || submitting">
-                {{ current.submitted ? '已提交' : (submitting ? '提交中...' : '提交问卷') }}
+              <button class="submit-btn" type="submit" :disabled="submitting">
+                {{ submitting ? '提交中...' : '提交问卷' }}
               </button>
             </div>
           </form>
         </template>
       </section>
+
     </main>
   </div>
 </template>
@@ -107,14 +112,6 @@ const supportFrequencyOptions = [
   { value: 5, label: '不需要对我进行帮扶' }
 ]
 
-function getQuestionOptions(question) {
-  const text = question?.questionText || ''
-  if (text.includes('帮扶频率')) {
-    return supportFrequencyOptions
-  }
-  return scaleOptions
-}
-
 const surveys = ref([])
 const selectedId = ref(null)
 const loading = ref(false)
@@ -125,13 +122,30 @@ const textAnswers = reactive({})
 
 const current = computed(() => surveys.value.find(item => item.survey.id === selectedId.value) || null)
 
+function getQuestionOptions(question) {
+  const text = question?.questionText || ''
+  if (text.includes('帮扶频率')) {
+    return supportFrequencyOptions
+  }
+  return scaleOptions
+}
+
+async function reloadAll() {
+  await loadSurveys()
+}
+
 async function loadSurveys() {
   loading.value = true
   errorMessage.value = ''
   try {
     surveys.value = await apiGet('/api/survey/student/list')
-    if (!selectedId.value && surveys.value.length > 0) {
-      selectSurvey((surveys.value.find(item => !item.submitted) || surveys.value[0]).survey.id)
+    if (surveys.value.length === 0) {
+      selectedId.value = null
+      clearAnswers()
+      return
+    }
+    if (!selectedId.value || !surveys.value.some(item => item.survey.id === selectedId.value)) {
+      selectSurvey(surveys.value[0].survey.id)
     }
   } catch (e) {
     errorMessage.value = e.message || '加载问卷失败'
@@ -143,12 +157,16 @@ async function loadSurveys() {
 function selectSurvey(id) {
   selectedId.value = id
   errorMessage.value = ''
+  clearAnswers()
+}
+
+function clearAnswers() {
   Object.keys(answers).forEach(key => delete answers[key])
   Object.keys(textAnswers).forEach(key => delete textAnswers[key])
 }
 
 async function submitSurvey() {
-  if (!current.value || current.value.submitted) return
+  if (!current.value) return
   errorMessage.value = ''
   const missing = current.value.questions.find(question => question.questionType === 1 && !answers[question.id])
   if (missing) {
@@ -166,8 +184,7 @@ async function submitSurvey() {
       }))
     }
     await apiJson(`/api/survey/student/${current.value.survey.id}/submit`, payload)
-    await loadSurveys()
-    selectedId.value = current.value?.survey?.id || selectedId.value
+    await reloadAll()
     emit('go-home')
   } catch (e) {
     errorMessage.value = e.message || '提交失败'
@@ -181,7 +198,7 @@ function formatTime(value) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
-onMounted(loadSurveys)
+onMounted(reloadAll)
 </script>
 
 <style scoped>
@@ -218,7 +235,7 @@ onMounted(loadSurveys)
 .submit-btn {
   min-height: 44px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   padding: 0 18px;
   font-size: 16px;
   font-weight: 900;
@@ -246,27 +263,45 @@ onMounted(loadSurveys)
 
 .survey-layout {
   display: grid;
-  grid-template-columns: 330px 1fr;
+  grid-template-columns: 320px minmax(0, 1fr);
   gap: 22px;
 }
 
 .survey-list,
 .answer-panel {
   border: 1px solid #dbe8fb;
-  border-radius: 22px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.84);
   box-shadow: 0 10px 28px rgba(22, 54, 100, 0.08);
 }
 
-.survey-list {
+.survey-list,
+.trend-panel {
   padding: 18px;
   align-self: start;
+}
+
+.list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.list-head strong {
+  font-size: 18px;
+}
+
+.list-head span {
+  color: #65799f;
+  font-weight: 900;
 }
 
 .survey-card {
   min-height: 92px;
   border: 1px solid #d8e4f5;
-  border-radius: 14px;
+  border-radius: 8px;
   background: #fff;
   padding: 14px;
   display: grid;
@@ -303,16 +338,11 @@ onMounted(loadSurveys)
   justify-self: start;
   min-height: 26px;
   padding: 4px 12px;
-  border-radius: 9px;
+  border-radius: 8px;
   color: #b47600;
   background: #fff3c4;
   font-style: normal;
   font-weight: 900;
-}
-
-.survey-card em.done {
-  color: #1aa56a;
-  background: #eafff3;
 }
 
 .answer-panel {
@@ -339,11 +369,18 @@ onMounted(loadSurveys)
   font-weight: 800;
 }
 
+.answer-head small {
+  display: block;
+  margin-top: 8px;
+  color: #8293bb;
+  font-weight: 800;
+}
+
 .status-pill {
   min-width: 76px;
   min-height: 32px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: 8px;
   display: inline-grid;
   place-items: center;
   font-weight: 900;
@@ -354,11 +391,6 @@ onMounted(loadSurveys)
   background: #fff3c4;
 }
 
-.status-pill.done {
-  color: #1aa56a;
-  background: #eafff3;
-}
-
 .question-list {
   display: grid;
   gap: 16px;
@@ -366,7 +398,7 @@ onMounted(loadSurveys)
 
 .question-item {
   border: 1px solid #d8e4f5;
-  border-radius: 14px;
+  border-radius: 8px;
   background: #fff;
   padding: 18px;
 }
@@ -397,7 +429,7 @@ onMounted(loadSurveys)
 
 .scale-options {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 10px;
   margin-top: 14px;
 }
@@ -405,7 +437,7 @@ onMounted(loadSurveys)
 .scale-options label {
   min-height: 72px;
   border: 1px solid #d8e4f5;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #f8fbff;
   display: grid;
   place-items: center;
@@ -443,7 +475,7 @@ onMounted(loadSurveys)
   min-height: 120px;
   margin-top: 14px;
   border: 1px solid #d8e4f5;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #f8fbff;
   color: #173875;
   font-size: 16px;
@@ -464,7 +496,7 @@ onMounted(loadSurveys)
 .error-message {
   min-height: 44px;
   border: 1px solid #ffd0dc;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #ffe9ee;
   color: #d93c58;
   display: flex;
@@ -474,14 +506,15 @@ onMounted(loadSurveys)
 }
 
 .empty-state {
-  min-height: 160px;
+  min-height: 140px;
   display: grid;
   place-items: center;
   color: #173875;
   font-weight: 900;
+  text-align: center;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1280px) {
   .survey-layout,
   .survey-header {
     grid-template-columns: 1fr;

@@ -13,11 +13,20 @@ public class Survey {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String title;
+    private String subject;
     private String description;
-    private Integer status; // 0-草稿, 1-已发布, 2-已关闭
-    private String scopeType; // ALL-全校
+    private String purpose;
+    private Integer status;
+    private Long templateId;
+    private String scopeType;
+    private String scopeText;
+    private Long publisherId;
+    private Integer academicYear;
+    private Integer termNo;
     private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime publishedAt;
+    private LocalDateTime startTime;
+    private LocalDateTime endTime;
 }
