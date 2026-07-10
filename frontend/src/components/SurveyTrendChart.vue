@@ -2,20 +2,32 @@
   <article class="trend-board">
     <aside class="term-legend">
       <strong>学期</strong>
-      <span
+      <button
+        type="button"
+        class="all-terms-button"
+        :class="{ active: !selectedTermKey }"
+        @click="selectTerm('')"
+      >
+        <i></i>
+        全部学期
+      </button>
+      <button
         v-for="term in allTerms"
         :key="term.key"
-        :class="{ active: activeTermKeys.has(term.key) }"
+        type="button"
+        :class="{ active: selectedTermKey === term.key }"
+        :disabled="!term.available"
+        @click="selectTerm(term.key)"
       >
         <i :style="{ background: term.color }"></i>
         {{ term.label }}
-      </span>
+      </button>
     </aside>
 
     <div class="chart-wrap">
       <header class="chart-head">
         <strong>{{ title }}</strong>
-        <span>横轴为题号，曲线为不同学期</span>
+        <span>横轴为题号，当前显示所选学期</span>
       </header>
 
       <div
@@ -110,18 +122,24 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   trend: {
     type: Object,
     required: true
   },
+  initialTermKey: {
+    type: String,
+    default: ''
+  },
   title: {
     type: String,
     default: '学生历年趋势'
   }
 })
+
+const emit = defineEmits(['term-change'])
 
 const left = 56
 const baseRight = 728
@@ -152,6 +170,7 @@ const scrollRef = ref(null)
 const isDragging = ref(false)
 const dragStartX = ref(0)
 const dragStartScrollLeft = ref(0)
+const selectedTermKey = ref('')
 
 const chartWidth = computed(() => Math.max(760, left + Math.max(questions.value.length - 1, 1) * questionStep + 80))
 const right = computed(() => Math.max(baseRight, chartWidth.value - 32))
@@ -205,23 +224,25 @@ const questions = computed(() => {
 })
 
 const allTerms = computed(() => {
-  const years = new Set()
+  const termKeys = new Set()
   for (const series of props.trend?.series || []) {
     for (const point of series.points || []) {
-      years.add(academicInfo(point).year)
+      termKeys.add(academicInfo(point).key)
     }
   }
-  const sortedYears = [...years].sort((a, b) => a - b)
-  const fourYears = sortedYears.length
-    ? sortedYears.slice(-4)
-    : Array.from({ length: 4 }, (_, index) => new Date().getFullYear() - 3 + index)
-  return fourYears.flatMap(year => [1, 2, 3].map(termNo => ({
-    year,
-    termNo,
-    key: `${year}-${termNo}`,
-    label: `${year}-${String(year + 1).slice(2)} 第${termNo}学期`,
-    color: palette[((year * 3 + termNo) % palette.length + palette.length) % palette.length]
-  })))
+  return [...termKeys]
+    .map(key => {
+      const [year, termNo] = key.split('-').map(Number)
+      return {
+        year,
+        termNo,
+        key,
+        available: true,
+        label: `${year}-${String(year + 1).slice(2)} 第${termNo}学期`,
+        color: palette[((year * 3 + termNo) % palette.length + palette.length) % palette.length]
+      }
+    })
+    .sort((a, b) => a.year - b.year || a.termNo - b.termNo)
 })
 
 function smoothPath(points) {
@@ -279,10 +300,38 @@ const visibleLines = computed(() => {
         path: smoothPath(points)
       }
     })
-    .filter(line => line.points.length > 0)
+    .filter(line => line.points.length > 0 && (!selectedTermKey.value || line.key === selectedTermKey.value))
 })
 
-const activeTermKeys = computed(() => new Set(visibleLines.value.map(line => line.key)))
+watch(allTerms, terms => {
+  const preferredKey = props.initialTermKey && terms.some(term => term.key === props.initialTermKey)
+    ? props.initialTermKey
+    : ''
+  const nextKey = preferredKey || (terms.length ? terms[terms.length - 1].key : '')
+  if (selectedTermKey.value !== nextKey) {
+    selectedTermKey.value = nextKey
+    emit('term-change', nextKey)
+  }
+}, { immediate: true })
+
+watch(() => props.initialTermKey, key => {
+  if (key && allTerms.value.some(term => term.key === key) && selectedTermKey.value !== key) {
+    selectedTermKey.value = key
+    emit('term-change', key)
+  }
+})
+
+function selectTerm(key) {
+  if (!key) {
+    selectedTermKey.value = ''
+    emit('term-change', '')
+    return
+  }
+  if (allTerms.value.some(term => term.key === key && term.available)) {
+    selectedTermKey.value = key
+    emit('term-change', key)
+  }
+}
 
 function startDrag(event) {
   if (!scrollRef.value) return
@@ -332,18 +381,32 @@ function stopDrag(event) {
   font-size: 15px;
 }
 
-.term-legend span {
+.term-legend button {
   min-height: 28px;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #9aa7b8;
   font-size: 12px;
   font-weight: 800;
+  text-align: left;
+  cursor: pointer;
 }
 
-.term-legend span.active {
+.term-legend button.active {
   color: #173875;
+}
+
+.term-legend .all-terms-button i {
+  background: #7c8aa0;
+}
+
+.term-legend button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .term-legend i {
@@ -353,7 +416,7 @@ function stopDrag(event) {
   opacity: 0.36;
 }
 
-.term-legend span.active i {
+.term-legend button.active i {
   opacity: 1;
 }
 

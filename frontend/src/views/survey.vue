@@ -13,7 +13,8 @@
               <h2>{{ selectedSubmission.realName || selectedSubmission.username || '学生' }} 的回答详情</h2>
               <p>
                 账号：{{ selectedSubmission.username || selectedSubmission.userId }}
-                · 提交时间：{{ formatTime(selectedSubmission.submitTime) }}
+                · 提交时间：{{ formatTime(displayedSubmission.submitTime) }}
+                · 学期：{{ termLabel(selectedTermKey) }}
               </p>
             </div>
             <span class="status-pill done">已提交</span>
@@ -26,12 +27,20 @@
             </div>
             <div v-if="trendLoading" class="empty slim">趋势加载中...</div>
             <div v-else-if="!studentTrend.series?.length" class="empty slim">暂无可绘制的量表趋势</div>
-            <SurveyTrendChart v-else :trend="studentTrend" :title="`${submissionDisplayName}历年趋势`" />
+            <SurveyTrendChart
+              v-else
+              :trend="studentTrend"
+              :initial-term-key="selectedTermKey"
+              :title="`${submissionDisplayName}历年趋势`"
+              @term-change="onTermChange"
+            />
           </section>
 
           <section class="admin-answer-list">
+            <div v-if="studentSubmissionsLoading" class="empty slim">正在加载该学期的回答...</div>
+            <div v-else-if="!displayedAnswers.length" class="empty slim">该学期暂无回答详情</div>
             <article
-              v-for="answer in selectedSubmission.answers"
+              v-for="answer in displayedAnswers"
               :key="answer.questionId"
               class="admin-answer-item"
             >
@@ -301,6 +310,7 @@ const surveys = ref([])
 const detail = ref(null)
 const submissions = ref([])
 const selectedSubmission = ref(null)
+const studentSubmissions = ref([])
 const selectedId = ref(null)
 const selectedFile = ref(null)
 const fileInput = ref(null)
@@ -309,7 +319,9 @@ const uploading = ref(false)
 const creating = ref(false)
 const acting = ref(false)
 const trendLoading = ref(false)
+const studentSubmissionsLoading = ref(false)
 const exporting = ref(false)
+const selectedTermKey = ref('')
 
 const submissionDisplayName = computed(() => (
   selectedSubmission.value?.realName
@@ -317,6 +329,15 @@ const submissionDisplayName = computed(() => (
   || selectedSubmission.value?.userId
   || '学生'
 ))
+
+const displayedSubmission = computed(() => {
+  const sameTerm = studentSubmissions.value.filter(item => item.termKey === selectedTermKey.value)
+  return sameTerm.find(item => item.surveyId === selectedSubmission.value?.surveyId)
+    || sameTerm[0]
+    || selectedSubmission.value
+})
+
+const displayedAnswers = computed(() => displayedSubmission.value?.answers || [])
 
 const templateForm = reactive({
   name: '',
@@ -372,6 +393,8 @@ async function loadSurveys() {
 async function selectSurvey(id) {
   selectedId.value = id
   selectedSubmission.value = null
+  studentSubmissions.value = []
+  selectedTermKey.value = ''
   studentTrend.value = { series: [] }
   detail.value = await apiGet(`/api/survey/admin/${id}`)
   await loadSubmissions()
@@ -387,11 +410,46 @@ async function loadSubmissions() {
 
 async function selectSubmission(item) {
   selectedSubmission.value = item
-  await loadSelectedTrend()
+  studentSubmissions.value = []
+  selectedTermKey.value = surveyTermKey(findSurvey(item.surveyId))
+  await Promise.all([loadSelectedTrend(), loadStudentSubmissions()])
 }
 
 function backToSurveyDetail() {
   selectedSubmission.value = null
+  studentSubmissions.value = []
+  selectedTermKey.value = ''
+}
+
+async function loadStudentSubmissions() {
+  const userId = selectedSubmission.value?.userId
+  if (!userId || !surveys.value.length) return
+  studentSubmissionsLoading.value = true
+  try {
+    const grouped = await Promise.all(surveys.value.map(async survey => {
+      const records = await apiGet(`/api/survey/admin/${survey.id}/submissions`)
+      return (Array.isArray(records) ? records : [])
+        .filter(item => String(item.userId) === String(userId))
+        .map(item => ({
+          ...item,
+          surveyId: survey.id,
+          surveyTitle: survey.title,
+          academicYear: survey.academicYear,
+          termNo: survey.termNo,
+          termKey: surveyTermKey(survey)
+        }))
+    }))
+    studentSubmissions.value = grouped.flat().sort((a, b) => {
+      const yearDiff = Number(b.academicYear || 0) - Number(a.academicYear || 0)
+      return yearDiff || Number(b.termNo || 0) - Number(a.termNo || 0)
+    })
+  } finally {
+    studentSubmissionsLoading.value = false
+  }
+}
+
+function onTermChange(termKey) {
+  selectedTermKey.value = termKey || ''
 }
 
 async function loadSelectedTrend() {
@@ -587,6 +645,22 @@ function formatAnswerValue(answer) {
 function formatTime(value) {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
+
+function findSurvey(surveyId) {
+  return surveys.value.find(item => String(item.id) === String(surveyId)) || null
+}
+
+function surveyTermKey(survey) {
+  if (!survey?.academicYear || !survey?.termNo) return ''
+  return `${survey.academicYear}-${survey.termNo}`
+}
+
+function termLabel(termKey) {
+  const survey = surveys.value.find(item => surveyTermKey(item) === termKey)
+  return survey
+    ? `${formatAcademicYear(survey.academicYear)} · 第 ${survey.termNo} 学期`
+    : '-'
 }
 
 function currentAcademicYear() {
