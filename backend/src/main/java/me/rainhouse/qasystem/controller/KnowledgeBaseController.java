@@ -1,6 +1,7 @@
 package me.rainhouse.qasystem.controller;
 
 import me.rainhouse.qasystem.common.result.Result;
+import me.rainhouse.qasystem.entity.KbCategory;
 import me.rainhouse.qasystem.entity.KbDocument;
 import me.rainhouse.qasystem.entity.KbQaEntry;
 import me.rainhouse.qasystem.service.KnowledgeBaseService;
@@ -55,6 +56,14 @@ public class KnowledgeBaseController {
     @GetMapping("/documents")
     public Result<List<KbDocument>> listDocuments(@RequestParam(value = "processStatus", required = false) Integer processStatus) {
         return Result.success(knowledgeBaseService.listDocuments(processStatus));
+    }
+
+    /**
+     * 首页学生入口使用的启用分类树原始列表，前端按 parentId 组装为一二级菜单。
+     */
+    @GetMapping("/categories")
+    public Result<List<KbCategory>> listCategories() {
+        return Result.success(knowledgeBaseService.listCategories());
     }
 
     @PostMapping("/documents/{id}/retry")

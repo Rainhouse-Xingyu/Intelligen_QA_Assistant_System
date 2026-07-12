@@ -32,6 +32,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/auth/sso/callback",
                         "/api/chat/common-questions",
                         "/api/chat/suggested-questions",
+                        "/api/kb/categories",
                         "/api/stat/hot-questions",
                         "/api/wechat/portal",   // 接收微信事件
                         "/api/wechat/login"     // 微信免密授权

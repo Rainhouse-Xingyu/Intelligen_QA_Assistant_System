@@ -1,6 +1,7 @@
 package me.rainhouse.qasystem.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import me.rainhouse.qasystem.entity.KbCategory;
 import me.rainhouse.qasystem.entity.KbDocument;
 import me.rainhouse.qasystem.entity.KbQaEntry;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,6 +17,8 @@ public interface KnowledgeBaseService extends IService<KbDocument> {
     KbDocument reprocessDocument(Long documentId, String operatorId, String moduleType);
 
     List<KbDocument> listDocuments(Integer processStatus);
+
+    List<KbCategory> listCategories();
 
     int deleteDocuments(List<Long> ids);
 

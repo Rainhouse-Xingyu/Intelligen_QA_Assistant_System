@@ -305,6 +305,15 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
         return this.list(wrapper);
     }
 
+    @Override
+    public List<KbCategory> listCategories() {
+        return kbCategoryMapper.selectList(new LambdaQueryWrapper<KbCategory>()
+                .eq(KbCategory::getStatus, 1)
+                .orderByAsc(KbCategory::getLevel)
+                .orderByAsc(KbCategory::getSortOrder)
+                .orderByAsc(KbCategory::getId));
+    }
+
     @Transactional(rollbackFor = Exception.class)
     @Override
     public int deleteDocuments(List<Long> ids) {

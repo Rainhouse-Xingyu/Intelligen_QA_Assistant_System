@@ -6,28 +6,30 @@
          <img src="/dnui-logo-white.png" alt="DNUI Logo" />
       </div>
       <div class="nav-menus">
-         <div class="nav-item">
-           考务资料 <span class="arrow">^</span>
-           <div class="dropdown">
-             <div class="dropdown-item">1</div>
-             <div class="dropdown-item">2</div>
-             <div class="dropdown-item">3</div>
-           </div>
-         </div>
-         <div class="nav-item">
-           教学帮扶 <span class="arrow">^</span>
-           <div class="dropdown">
-             <div class="dropdown-item">1</div>
-             <div class="dropdown-item">2</div>
-             <div class="dropdown-item">3</div>
-           </div>
-         </div>
-         <div class="nav-item">
-           心理指导 <span class="arrow">^</span>
-           <div class="dropdown">
-             <div class="dropdown-item">1</div>
-             <div class="dropdown-item">2</div>
-             <div class="dropdown-item">3</div>
+         <div
+           v-for="group in topNavigationCategories"
+           :key="group.id || group.label"
+           class="nav-item nav-category-item"
+           tabindex="0"
+         >
+           {{ group.label }} <span class="arrow">^</span>
+           <div class="dropdown category-dropdown">
+             <button
+               v-if="!group.children || group.children.length === 0"
+               type="button"
+               class="dropdown-item"
+               @click="handleCategoryShortcut(group)"
+             >查看全部</button>
+             <button
+               v-for="child in group.children"
+               :key="child.id || child.label"
+               type="button"
+               class="dropdown-item"
+               @click="handleCategoryShortcut(group, child)"
+             >
+               <span>{{ child.label }}</span>
+               <small v-if="child.children && child.children.length">{{ child.children.length }} 个细分项</small>
+             </button>
            </div>
          </div>
       </div>

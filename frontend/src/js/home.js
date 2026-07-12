@@ -3,6 +3,38 @@ import { apiGet, apiForm } from './adminApi'
 
 const HISTORY_RETENTION_DAYS = 30
 const HISTORY_RETENTION_MS = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000
+const DEFAULT_NAV_CATEGORIES = [
+  {
+    id: 'fallback-exam',
+    label: '考务资料',
+    value: '考务通知',
+    children: [
+      { id: 'fallback-exam-arrange', label: '考试安排', value: '考试安排' },
+      { id: 'fallback-exam-score', label: '成绩查询', value: '成绩查询' },
+      { id: 'fallback-exam-makeup', label: '补考缓考', value: '补考缓考' }
+    ]
+  },
+  {
+    id: 'fallback-study',
+    label: '教学帮扶',
+    value: '学业帮扶',
+    children: [
+      { id: 'fallback-study-warning', label: '学业预警', value: '学业预警' },
+      { id: 'fallback-study-course', label: '选课重修', value: '选课重修' },
+      { id: 'fallback-study-resource', label: '学习支持', value: '学习支持' }
+    ]
+  },
+  {
+    id: 'fallback-mental',
+    label: '心理指导',
+    value: '心理辅导',
+    children: [
+      { id: 'fallback-mental-consult', label: '心理咨询', value: '心理咨询' },
+      { id: 'fallback-mental-stress', label: '压力调适', value: '压力调适' },
+      { id: 'fallback-mental-help', label: '求助渠道', value: '求助渠道' }
+    ]
+  }
+]
 
 export default {
   name: 'Home',
@@ -16,6 +48,7 @@ export default {
     const commonQuestions = ref([])
     const commonQuestionsLoading = ref(false)
     const hotQuestions = ref([])
+    const categoryTree = ref([])
     const commonQuestionModule = ref('')
     const hotBubbleVisible = ref(false)
     const mascotPosition = ref({ x: 28, y: 96 })
@@ -41,6 +74,10 @@ export default {
       { label: '全部', value: '' },
       ...categories
     ]
+    const topNavigationCategories = computed(() => {
+      const source = categoryTree.value.length ? categoryTree.value : DEFAULT_NAV_CATEGORIES
+      return source.slice(0, 3)
+    })
 
     // --- Login state ---
     const isLoggedIn = ref(false)
@@ -167,6 +204,47 @@ export default {
       moduleType: item.moduleType || item.module_type || ''
     })
 
+    const normalizeCategoryItem = (item) => ({
+      id: item.id,
+      parentId: item.parentId ?? item.parent_id ?? null,
+      label: item.name || item.label || '',
+      value: item.name || item.value || '',
+      level: Number(item.level || 0),
+      sortOrder: Number(item.sortOrder ?? item.sort_order ?? 0),
+      children: []
+    })
+
+    const sortCategories = (items) => [...items].sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+      return String(a.label).localeCompare(String(b.label), 'zh-CN')
+    })
+
+    const buildCategoryTree = (items) => {
+      const normalized = Array.isArray(items)
+        ? items.map(normalizeCategoryItem).filter(item => item.id != null && item.label)
+        : []
+      const byId = new Map(normalized.map(item => [item.id, item]))
+      normalized.forEach(item => {
+        if (item.parentId != null && byId.has(item.parentId)) {
+          byId.get(item.parentId).children.push(item)
+        }
+      })
+      return sortCategories(normalized.filter(item => item.level === 1 || item.parentId == null))
+        .map(item => ({
+          ...item,
+          children: sortCategories(item.children.filter(child => child.level === 2 || child.children.length))
+        }))
+        .filter(item => item.label)
+    }
+
+    const loadCategoryTree = async () => {
+      try {
+        categoryTree.value = buildCategoryTree(await apiGet('/api/kb/categories'))
+      } catch {
+        categoryTree.value = []
+      }
+    }
+
     const loadCommonQuestions = async () => {
       commonQuestionsLoading.value = true
       try {
@@ -229,6 +307,18 @@ export default {
       question.value = normalized.questionText
       handleSendFromHome(normalized)
       hotBubbleVisible.value = false
+    }
+
+    const handleCategoryShortcut = (group, child = null) => {
+      const moduleType = group?.value || group?.label || ''
+      if (!moduleType) return
+      selectedCategory.value = moduleType
+      const childLabel = child?.label || child?.value || ''
+      const categoryText = childLabel
+        ? `${group.label} > ${childLabel}`
+        : group.label
+      question.value = `我想查询「${categoryText}」相关问题`
+      handleSendFromHome()
     }
 
     // --- Auth methods ---
@@ -393,6 +483,7 @@ export default {
 
     onMounted(() => {
       restoreSession()
+      loadCategoryTree()
       loadCommonQuestions()
       nextTick(scheduleLogoToneUpdate)
       window.addEventListener('resize', scheduleLogoToneUpdate)
@@ -420,6 +511,7 @@ export default {
       commonQuestions,
       commonQuestionsLoading,
       hotQuestions,
+      topNavigationCategories,
       commonQuestionModule,
       commonQuestionCategories,
       hotBubbleVisible,
@@ -441,6 +533,7 @@ export default {
       changeCommonQuestionModule,
       handleCommonQuestion,
       handleHotQuestion,
+      handleCategoryShortcut,
       showHotBubble,
       startMascotDrag,
       newConversation,
