@@ -81,9 +81,10 @@ public class AiChatServiceImpl implements AiChatService {
         String memoryContext = chatMemoryService.buildRecentContext(sessionId, query);
         String rewriteQuestion = queryRewriteService.rewrite(query);
         String retrievalQuestion = chatMemoryService.buildRetrievalQuery(rewriteQuestion, memoryContext);
-        String moduleType = shouldRouteToPsychology(query, selectedModuleType)
-                ? "心理辅导"
-                : intentClassifierService.classify(retrievalQuestion, selectedModuleType);
+        List<String> moduleCandidates = shouldRouteToPsychology(query, selectedModuleType)
+                ? List.of("心理辅导")
+                : intentClassifierService.classifyCandidates(rewriteQuestion, selectedModuleType);
+        String moduleType = moduleCandidates.stream().findFirst().orElse(null);
         saveRawQuestion(userId, sessionId, query, moduleType);
 
         if ("心理辅导".equals(moduleType)) {
@@ -102,7 +103,12 @@ public class AiChatServiceImpl implements AiChatService {
                     .build();
         }
 
-        VectorSearchResponse searchResponse = vectorSearchService.search(retrievalQuestion, moduleType, 3, userId, sessionId);
+        VectorSearchResponse searchResponse = moduleCandidates.size() <= 1
+                ? vectorSearchService.search(retrievalQuestion, moduleType, 3, userId, sessionId)
+                : vectorSearchService.search(retrievalQuestion, moduleCandidates, 3, userId, sessionId);
+        if (StringUtils.hasText(searchResponse.moduleType())) {
+            moduleType = searchResponse.moduleType();
+        }
         String answer = answerGeneratorService.generate(query, rewriteQuestion, searchResponse, memoryContext);
         String answerSource = "RAG";
 

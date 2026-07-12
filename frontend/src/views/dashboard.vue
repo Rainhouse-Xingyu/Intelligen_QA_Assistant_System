@@ -67,22 +67,16 @@
       <section class="admin-card hot-config-card">
         <div class="panel-head">
           <h3 class="section-title">首页热门问题配置</h3>
-          <button class="btn text" @click="loadHotConfigs">
-            <RefreshIcon />
-            刷新
-          </button>
-        </div>
-        <div class="hot-config-form">
-          <input v-model="hotConfigForm.questionText" class="input" placeholder="热门问题" />
-          <input v-model="hotConfigForm.answerText" class="input" placeholder="直接回答内容" />
-          <select v-model="hotConfigForm.moduleType" class="select">
-            <option value="">未分类</option>
-            <option v-for="module in modules" :key="module" :value="module">{{ module }}</option>
-          </select>
-          <input v-model="hotConfigForm.validUntil" class="input" type="datetime-local" />
-          <button class="btn gold" :disabled="savingHotConfig" @click="saveHotConfig">
-            {{ savingHotConfig ? '保存中...' : '保存配置' }}
-          </button>
+          <div class="toolbar">
+            <button class="btn gold" @click="openHotPicker">
+              <PlusIcon />
+              新增
+            </button>
+            <button class="btn text" @click="loadHotConfigs">
+              <RefreshIcon />
+              刷新
+            </button>
+          </div>
         </div>
         <div class="hot-config-list">
           <div v-for="item in hotConfigs" :key="item.id" class="hot-config-row">
@@ -99,14 +93,31 @@
       <section class="admin-card">
         <div class="panel-head">
           <h3 class="section-title">未识别问题列表</h3>
-          <button class="btn text" @click="loadData">
-            <RefreshIcon />
-            刷新
-          </button>
+          <div class="toolbar">
+            <button class="btn text" :disabled="selectedUnrecognizedIds.length === 0 || batchHandling" @click="batchMarkHandled">
+              <CheckIcon />
+              {{ batchHandling ? '处理中...' : '批量已处理' }}
+            </button>
+            <button class="btn text" :disabled="exportingUnrecognized || unrecognized.length === 0" @click="exportUnrecognized">
+              {{ exportingUnrecognized ? '导出中...' : '导出 Excel' }}
+            </button>
+            <button class="btn text" @click="loadData">
+              <RefreshIcon />
+              刷新
+            </button>
+          </div>
         </div>
         <table class="admin-table">
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  :checked="allUnrecognizedSelected"
+                  :disabled="unrecognized.length === 0"
+                  @change="toggleAllUnrecognized"
+                />
+              </th>
               <th>问题</th>
               <th>模块</th>
               <th>频率</th>
@@ -117,6 +128,9 @@
           </thead>
           <tbody>
             <tr v-for="item in unrecognized" :key="item.id">
+              <td>
+                <input type="checkbox" :checked="isUnrecognizedSelected(item.id)" @change="toggleUnrecognized(item.id)" />
+              </td>
               <td>{{ item.questionText }}</td>
               <td>{{ item.moduleType || '-' }}</td>
               <td>{{ item.frequency || 1 }}</td>
@@ -131,14 +145,51 @@
         </table>
       </section>
     </main>
+
+    <div v-if="hotPickerOpen" class="modal-mask" @click.self="closeHotPicker">
+      <div class="hot-picker-modal">
+        <div class="modal-head">
+          <h3>从知识库选择热门问题</h3>
+          <button type="button" class="modal-close" @click="closeHotPicker">×</button>
+        </div>
+        <div class="hot-picker-tools">
+          <input v-model="hotPickerKeyword" class="input" placeholder="模糊搜索问题或答案" @keyup.enter="searchKbEntries" />
+          <select v-model="hotPickerModule" class="select" @change="searchKbEntries">
+            <option value="">全部模块</option>
+            <option v-for="module in modules" :key="module" :value="module">{{ module }}</option>
+          </select>
+          <button class="btn ghost" :disabled="hotPickerLoading" @click="searchKbEntries">
+            {{ hotPickerLoading ? '搜索中...' : '搜索' }}
+          </button>
+        </div>
+        <div class="hot-picker-list">
+          <label v-for="entry in kbEntries" :key="entry.id" :class="['hot-picker-row', { selected: selectedKbEntryIds.includes(entry.id) }]">
+            <input type="checkbox" :checked="selectedKbEntryIds.includes(entry.id)" @change="toggleKbEntry(entry.id)" />
+            <div>
+              <strong>{{ entry.question }}</strong>
+              <p>{{ entry.answer }}</p>
+              <span>{{ entry.moduleType || '未分类' }}</span>
+            </div>
+          </label>
+          <div v-if="!hotPickerLoading && kbEntries.length === 0" class="empty slim">暂无匹配知识库问题</div>
+        </div>
+        <div class="modal-actions">
+          <span>已选 {{ selectedKbEntryIds.length }} 条</span>
+          <button class="btn ghost" type="button" @click="closeHotPicker">取消</button>
+          <button class="btn primary" :disabled="savingHotConfig || selectedKbEntryIds.length === 0" @click="saveSelectedHotConfigs">
+            {{ savingHotConfig ? '保存中...' : '加入热门问题' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { apiDelete, apiForm, apiGet, apiJson } from '../js/adminApi'
+import { apiDelete, apiDownload, apiForm, apiGet, apiJson } from '../js/adminApi'
 import '../css/admin.css'
-import { AdminSidebar, AlertIcon, CheckIcon, RefreshIcon } from './shared/adminParts'
+import { AdminSidebar, AlertIcon, CheckIcon, PlusIcon, RefreshIcon } from './shared/adminParts'
 
 const days = ref(7)
 const loading = ref(false)
@@ -147,17 +198,23 @@ const hotQuestions = ref([])
 const unrecognized = ref([])
 const hotConfigs = ref([])
 const savingHotConfig = ref(false)
+const batchHandling = ref(false)
+const exportingUnrecognized = ref(false)
+const selectedUnrecognizedIds = ref([])
+const hotPickerOpen = ref(false)
+const hotPickerKeyword = ref('')
+const hotPickerModule = ref('')
+const hotPickerLoading = ref(false)
+const kbEntries = ref([])
+const selectedKbEntryIds = ref([])
 const modules = ['考务通知', '教学运行', '学业帮扶', '心理辅导']
-const hotConfigForm = ref({
-  questionText: '',
-  answerText: '',
-  moduleType: '',
-  validUntil: '',
-  enabled: 1,
-  sortOrder: 0
-})
 
 const topUnrecognized = computed(() => overview.value.topUnrecognized || [])
+const visibleUnrecognizedIds = computed(() => unrecognized.value.map(item => item.id).filter(Boolean))
+const allUnrecognizedSelected = computed(() => {
+  return visibleUnrecognizedIds.value.length > 0
+    && visibleUnrecognizedIds.value.every(id => selectedUnrecognizedIds.value.includes(id))
+})
 const statCards = computed(() => [
   { label: '强命中', value: overview.value.strongHitCount || 0, color: '#35b77a' },
   { label: '弱命中', value: overview.value.weakHitCount || 0, color: '#f2a10b' },
@@ -177,6 +234,7 @@ async function loadData() {
     overview.value = overviewData || {}
     hotQuestions.value = hotData || []
     unrecognized.value = listData?.records || []
+    selectedUnrecognizedIds.value = selectedUnrecognizedIds.value.filter(id => visibleUnrecognizedIds.value.includes(id))
     hotConfigs.value = configData || []
   } finally {
     loading.value = false
@@ -201,26 +259,68 @@ async function markHandled(item) {
   await loadData()
 }
 
+function isUnrecognizedSelected(id) {
+  return selectedUnrecognizedIds.value.includes(id)
+}
+
+function toggleUnrecognized(id) {
+  if (!id) return
+  selectedUnrecognizedIds.value = isUnrecognizedSelected(id)
+    ? selectedUnrecognizedIds.value.filter(selectedId => selectedId !== id)
+    : [...selectedUnrecognizedIds.value, id]
+}
+
+function toggleAllUnrecognized() {
+  selectedUnrecognizedIds.value = allUnrecognizedSelected.value ? [] : [...visibleUnrecognizedIds.value]
+}
+
 async function loadHotConfigs() {
   hotConfigs.value = await apiGet('/api/stat/hot-question-configs')
 }
 
-async function saveHotConfig() {
-  if (!hotConfigForm.value.questionText || !hotConfigForm.value.answerText) return
+async function openHotPicker() {
+  hotPickerOpen.value = true
+  selectedKbEntryIds.value = []
+  await searchKbEntries()
+}
+
+function closeHotPicker() {
+  hotPickerOpen.value = false
+}
+
+async function searchKbEntries() {
+  hotPickerLoading.value = true
+  try {
+    kbEntries.value = await apiGet('/api/kb/entries', {
+      keyword: hotPickerKeyword.value,
+      moduleType: hotPickerModule.value,
+      status: 1
+    })
+  } finally {
+    hotPickerLoading.value = false
+  }
+}
+
+function toggleKbEntry(id) {
+  if (!id) return
+  selectedKbEntryIds.value = selectedKbEntryIds.value.includes(id)
+    ? selectedKbEntryIds.value.filter(selectedId => selectedId !== id)
+    : [...selectedKbEntryIds.value, id]
+}
+
+async function saveSelectedHotConfigs() {
+  const selectedEntries = kbEntries.value.filter(entry => selectedKbEntryIds.value.includes(entry.id))
+  if (!selectedEntries.length) return
   savingHotConfig.value = true
   try {
-    await apiJson('/api/stat/hot-question-configs', {
-      ...hotConfigForm.value,
-      validUntil: hotConfigForm.value.validUntil ? `${hotConfigForm.value.validUntil}:00` : null
-    })
-    hotConfigForm.value = {
-      questionText: '',
-      answerText: '',
-      moduleType: '',
-      validUntil: '',
+    await Promise.all(selectedEntries.map((entry, index) => apiJson('/api/stat/hot-question-configs', {
+      questionText: entry.question,
+      answerText: entry.answer,
+      moduleType: entry.moduleType,
       enabled: 1,
-      sortOrder: 0
-    }
+      sortOrder: hotConfigs.value.length + index
+    })))
+    closeHotPicker()
     await loadHotConfigs()
   } finally {
     savingHotConfig.value = false
@@ -231,6 +331,33 @@ async function deleteHotConfig(item) {
   if (!item?.id) return
   await apiDelete(`/api/stat/hot-question-configs/${item.id}`)
   await loadHotConfigs()
+}
+
+async function batchMarkHandled() {
+  if (selectedUnrecognizedIds.value.length === 0) return
+  batchHandling.value = true
+  try {
+    await apiJson('/api/admin/unrecognized/batch-update-status', {
+      ids: selectedUnrecognizedIds.value,
+      status: 1
+    })
+    selectedUnrecognizedIds.value = []
+    await loadData()
+  } finally {
+    batchHandling.value = false
+  }
+}
+
+async function exportUnrecognized() {
+  exportingUnrecognized.value = true
+  try {
+    const query = selectedUnrecognizedIds.value.length
+      ? `?ids=${selectedUnrecognizedIds.value.join(',')}`
+      : ''
+    await apiDownload(`/api/admin/unrecognized/export${query}`, '未识别问题列表.xlsx')
+  } finally {
+    exportingUnrecognized.value = false
+  }
 }
 
 function barWidth(value) {
@@ -313,16 +440,10 @@ onMounted(loadData)
 .hot-config-card {
   margin-top: 22px;
 }
-.hot-config-form {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(220px, 1.5fr) 150px 190px auto;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 16px;
-}
 .hot-config-list {
   display: grid;
   gap: 10px;
+  margin-top: 16px;
 }
 .hot-config-row {
   min-height: 58px;
@@ -407,13 +528,105 @@ onMounted(loadData)
   justify-content: space-between;
   align-items: center;
 }
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(8, 24, 56, 0.38);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.hot-picker-modal {
+  width: min(860px, calc(100vw - 40px));
+  max-height: min(760px, calc(100vh - 56px));
+  border-radius: 14px;
+  background: #fff;
+  padding: 22px;
+  display: grid;
+  grid-template-rows: auto auto minmax(220px, 1fr) auto;
+  gap: 16px;
+  box-shadow: 0 24px 80px rgba(13, 21, 40, 0.24);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal-head h3 {
+  margin: 0;
+  color: #173875;
+}
+.modal-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: #f1f6ff;
+  color: #173875;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hot-picker-tools {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px auto;
+  gap: 12px;
+}
+.hot-picker-list {
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+.hot-picker-row {
+  border: 1px solid #d8e4f5;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  cursor: pointer;
+}
+.hot-picker-row.selected {
+  border-color: #3182ce;
+  background: #ebf8ff;
+}
+.hot-picker-row strong,
+.hot-picker-row span {
+  display: block;
+  color: #173875;
+}
+.hot-picker-row p {
+  margin: 6px 0;
+  color: #49659c;
+  line-height: 1.5;
+  font-weight: 800;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+.modal-actions span {
+  margin-right: auto;
+  color: #49659c;
+  font-weight: 900;
+}
 
 @media (max-width: 1200px) {
   .stats-grid,
   .dashboard-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .hot-config-form {
+  .hot-picker-tools {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -421,7 +634,7 @@ onMounted(loadData)
 @media (max-width: 760px) {
   .stats-grid,
   .dashboard-grid,
-  .hot-config-form {
+  .hot-picker-tools {
     grid-template-columns: 1fr;
   }
 }

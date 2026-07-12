@@ -344,18 +344,13 @@ def rewrite(request: RewriteRequest) -> RewriteResponse:
 
 @app.post("/classify", response_model=ClassifyResponse)
 def classify(request: ClassifyRequest) -> ClassifyResponse:
-    """模块分类 —— 判断用户问题属于哪个教务子模块（如考务通知、教学运行等）"""
-    # 默认模块类型及对应的描述文字
-    candidates = request.candidates or ["考务通知", "教学运行", "学业帮扶", "心理辅导"]
+    """根据调用方提供的动态分类描述计算相关性。"""
+    candidates = request.candidates
+    if not candidates:
+        return ClassifyResponse(moduleType=None, scores={})
     print(f"[API] /classify 收到问题，候选模块 {candidates}，正在用 chinese-macbert-base 分类...")
-    descriptions = {
-        "考务通知": "考试安排、考场、准考证、成绩、补考、缓考、四六级等考务问题",
-        "教学运行": "选课、课表、调课、重修、课程、教室、学分、培养方案等教学运行问题",
-        "学业帮扶": "挂科、绩点、学业预警、学习困难、复习资源、帮扶措施等学业支持问题",
-        "心理辅导": "焦虑、压力、失眠、情绪低落、心理咨询、心理疏导等心理健康问题",
-    }
     tokenizer, model = macbert_bundle()
-    texts = [request.query] + [descriptions.get(candidate, candidate) for candidate in candidates]
+    texts = [request.query] + candidates
     vectors = encode_with_bert(tokenizer, model, texts, max_length=256).numpy()
     query_vector = vectors[0]
     scores: dict[str, float] = {}

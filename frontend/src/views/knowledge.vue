@@ -105,9 +105,6 @@
               <option value="document">document</option>
               <option value="common_question">常见问题</option>
             </select>
-            <input v-model="filters.categoryL1" class="input" placeholder="一级分类" @keyup.enter="loadEntries" />
-            <input v-model="filters.categoryL2" class="input" placeholder="二级分类" @keyup.enter="loadEntries" />
-            <input v-model="filters.categoryL3" class="input" placeholder="三级分类" @keyup.enter="loadEntries" />
           </div>
 
           <div class="selection-bar">
@@ -226,10 +223,7 @@ const allDocumentsSelected = computed(() => {
 const filters = reactive({
   keyword: '',
   moduleType: '',
-  sourceType: '',
-  categoryL1: '',
-  categoryL2: '',
-  categoryL3: ''
+  sourceType: ''
 })
 
 const form = reactive({

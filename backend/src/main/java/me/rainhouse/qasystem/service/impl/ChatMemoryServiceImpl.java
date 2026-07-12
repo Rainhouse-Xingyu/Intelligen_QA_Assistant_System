@@ -22,17 +22,13 @@ public class ChatMemoryServiceImpl implements ChatMemoryService {
             "它", "他", "她", "其", "继续", "还有", "呢"
     );
 
-    private static final Set<String> SHORT_FOLLOW_UP_WORDS = Set.of(
-            "吗", "怎么", "哪里", "多少", "时间", "截止", "条件", "流程", "材料", "要求"
+    private static final Set<String> FOLLOW_UP_ONLY_WORDS = Set.of(
+            "什么时候", "怎么办", "是什么", "怎么样", "怎么", "如何", "哪里", "多少",
+            "时间", "截止", "条件", "流程", "材料", "要求", "办理", "申请", "查询", "查看",
+            "需要", "什么", "是否", "可以", "具体", "继续", "还有", "然后", "之后", "一下",
+            "吗", "呢", "的", "到"
     );
-
-    private static final Set<String> DOMAIN_TOPIC_WORDS = Set.of(
-            "补考", "缓考", "考试", "线上考试", "线下考试", "考场", "准考证", "成绩", "四六级",
-            "选课", "退课", "补选", "课表", "调课", "重修", "学分", "培养方案",
-            "挂科", "绩点", "gpa", "学业预警", "帮扶", "困难", "留级", "毕业",
-            "请假", "销假", "休学", "复学", "转专业", "学籍", "证明",
-            "心理", "焦虑", "压力", "失眠", "咨询", "情绪"
-    );
+    private static final int MAX_CONTEXT_USER_MESSAGES = 3;
 
     private final ChatMessageMapper chatMessageMapper;
     private final int maxMessages;
@@ -57,7 +53,7 @@ public class ChatMemoryServiceImpl implements ChatMemoryService {
 
         List<ChatMessage> messages = chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getSessionId, sessionId)
-                .in(ChatMessage::getSenderType, List.of(1, 2, 3))
+                .eq(ChatMessage::getSenderType, 1)
                 .orderByDesc(ChatMessage::getCreatedAt)
                 .orderByDesc(ChatMessage::getId)
                 .last("limit " + Math.max(maxMessages + 2, 4)));
@@ -69,6 +65,11 @@ public class ChatMemoryServiceImpl implements ChatMemoryService {
         Collections.reverse(messages);
         List<ChatMessage> usableMessages = new ArrayList<>(messages);
         removeCurrentQuestionIfPresent(usableMessages, currentQuery);
+        if (usableMessages.size() > MAX_CONTEXT_USER_MESSAGES) {
+            usableMessages = new ArrayList<>(usableMessages.subList(
+                    usableMessages.size() - MAX_CONTEXT_USER_MESSAGES,
+                    usableMessages.size()));
+        }
 
         StringBuilder context = new StringBuilder();
         for (ChatMessage message : usableMessages) {
@@ -109,6 +110,9 @@ public class ChatMemoryServiceImpl implements ChatMemoryService {
         if (!StringUtils.hasText(cleanQuestion) || !StringUtils.hasText(memoryContext)) {
             return cleanQuestion;
         }
+        if (!looksLikeFollowUp(cleanQuestion)) {
+            return cleanQuestion;
+        }
         return limit("对话上下文（用于理解当前追问，不作为政策依据）：\n"
                 + memoryContext
                 + "\n\n当前用户问题："
@@ -132,14 +136,18 @@ public class ChatMemoryServiceImpl implements ChatMemoryService {
     }
 
     private boolean looksLikeFollowUp(String query) {
-        String normalized = query.toLowerCase(Locale.ROOT);
+        String normalized = normalizeForCompare(query);
         if (containsAny(normalized, CONTEXT_REFERENCE_WORDS)) {
             return true;
         }
-        if (containsAny(normalized, DOMAIN_TOPIC_WORDS)) {
-            return false;
+        String remaining = normalized;
+        List<String> removableWords = FOLLOW_UP_ONLY_WORDS.stream()
+                .sorted((left, right) -> Integer.compare(right.length(), left.length()))
+                .toList();
+        for (String word : removableWords) {
+            remaining = remaining.replace(word.toLowerCase(Locale.ROOT), "");
         }
-        return normalized.length() <= 12 || containsAny(normalized, SHORT_FOLLOW_UP_WORDS);
+        return remaining.length() <= 1;
     }
 
     private boolean containsAny(String text, Set<String> words) {

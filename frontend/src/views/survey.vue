@@ -719,6 +719,14 @@ label {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
+.two-cols label {
+  min-width: 0;
+}
+.two-cols input[type="datetime-local"] {
+  min-width: 0;
+  font-size: 14px;
+  padding: 0 10px;
+}
 
 .check-row {
   display: flex;

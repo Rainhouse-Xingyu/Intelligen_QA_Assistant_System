@@ -66,10 +66,22 @@ public class LocalModelClientImpl implements LocalModelClient {
 
     @Override
     public String classify(String query, List<String> candidateModules) {
+        return classifyNode(query, candidateModules).path("moduleType").asText(null);
+    }
+
+    @Override
+    public Map<String, Double> classifyScores(String query, List<String> candidateModules) {
+        JsonNode scoresNode = classifyNode(query, candidateModules).path("scores");
+        Map<String, Double> scores = new LinkedHashMap<>();
+        scoresNode.fields().forEachRemaining(field -> scores.put(field.getKey(), field.getValue().asDouble()));
+        return scores;
+    }
+
+    private JsonNode classifyNode(String query, List<String> candidateModules) {
         return post("/classify", Map.of(
                 "query", query == null ? "" : query,
                 "candidates", candidateModules == null ? List.of() : candidateModules
-        )).path("moduleType").asText(null);
+        ));
     }
 
     @Override

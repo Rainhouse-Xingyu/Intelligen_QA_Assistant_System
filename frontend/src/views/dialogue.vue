@@ -1,5 +1,29 @@
 <template>
   <div class="chat-page-wrapper">
+    <aside v-if="isStudentSession" class="dialogue-history-sidebar">
+      <div class="dialogue-history-head">
+        <strong>历史对话</strong>
+        <button type="button" title="新对话" @click="newConversation">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 5v14"></path>
+            <path d="M5 12h14"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="dialogue-history-list">
+        <button
+          v-for="conv in conversations"
+          :key="conv.id"
+          type="button"
+          :class="{ active: conv.id === activeHistoryId }"
+          @click="selectConversation(conv)"
+        >
+          <span>{{ conv.title || conv.firstQuestion || '新对话' }}</span>
+          <em>{{ formatHistoryTime(conv.updatedAt || conv.createdAt) }}</em>
+        </button>
+        <div v-if="conversations.length === 0" class="dialogue-history-empty">暂无历史对话</div>
+      </div>
+    </aside>
     <div class="chat-page">
       <!-- Chat Header -->
       <header class="chat-header">
@@ -84,6 +108,18 @@
              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
              <path d="M12 19v3"></path>
              <path d="M8 22h8"></path>
+           </svg>
+         </button>
+         <button
+           class="tts-btn"
+           :class="{ active: needVoiceAnswer }"
+           :title="needVoiceAnswer ? '已开启语音回答' : '开启语音回答'"
+           @click="needVoiceAnswer = !needVoiceAnswer"
+         >
+           <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M11 5 6 9H3v6h3l5 4V5z"></path>
+             <path d="M16 9.5a4 4 0 0 1 0 5"></path>
+             <path d="M19 7a8 8 0 0 1 0 10"></path>
            </svg>
          </button>
          <button class="send-btn" :class="{ active: chatInput.trim().length > 0 }" @click="sendMessage(false)">

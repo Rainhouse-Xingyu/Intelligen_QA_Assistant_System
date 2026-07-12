@@ -70,16 +70,20 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
         }
 
         if (localModelClient.enabled()) {
-            log.info("[AI] /generate call local model: hitStatus={}, topScore={}, references={}",
-                    searchResponse.hitStatus(), searchResponse.topScore(), searchResponse.results().size());
-            String answer = localModelClient.generate(
-                    chatMemoryService.buildGenerationQuestion(originalQuestion, memoryContext),
-                    rewriteQuestion,
-                    searchResponse.results());
-            if (StringUtils.hasText(answer)) {
-                return answer;
+            try {
+                log.info("[AI] /generate call local model: hitStatus={}, topScore={}, references={}",
+                        searchResponse.hitStatus(), searchResponse.topScore(), searchResponse.results().size());
+                String answer = localModelClient.generate(
+                        chatMemoryService.buildGenerationQuestion(originalQuestion, memoryContext),
+                        rewriteQuestion,
+                        searchResponse.results());
+                if (StringUtils.hasText(answer)) {
+                    return answer;
+                }
+                log.info("[AI] /generate local model returned empty text, fallback to top knowledge answer");
+            } catch (Exception ex) {
+                log.warn("[AI] /generate local model failed, fallback to top knowledge answer: {}", ex.getMessage());
             }
-            log.info("[AI] /generate local model returned empty text, fallback to top knowledge answer");
         }
 
         VectorSearchResult top = searchResponse.results().get(0);

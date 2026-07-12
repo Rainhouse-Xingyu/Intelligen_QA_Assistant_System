@@ -120,6 +120,7 @@ public class ChatController {
     @PostMapping("/text-detail")
     public Result<AiChatResponse> sendTextDetail(@RequestParam("query") String query,
                                                  @RequestParam(value = "moduleType", required = false) String moduleType,
+                                                 @RequestParam(value = "needTts", defaultValue = "false") Boolean needTts,
                                                  HttpServletRequest request) {
         if (!CasualConversationUtils.isCasualOnly(query)) {
             statHotQuestionService.recordQuestion(query);
@@ -151,8 +152,17 @@ public class ChatController {
         saveMessage(session.getId(), 1, 1, query, null);
         AiChatResponse response = aiChatService.chat(userId, session.getId(), query, moduleType);
         String aiAnswer = bizContactService.appendContactInfoIfMatch(query, response.getAnswer());
+        String mediaUrl = null;
+        if (Boolean.TRUE.equals(needTts)) {
+            try {
+                mediaUrl = audioService.textToSpeech(aiAnswer);
+            } catch (Exception ex) {
+                return Result.error(ex.getMessage());
+            }
+        }
         response.setAnswer(aiAnswer);
-        saveMessage(session.getId(), 2, 1, aiAnswer, null);
+        response.setMediaUrl(mediaUrl);
+        saveMessage(session.getId(), 2, Boolean.TRUE.equals(needTts) ? 2 : 1, aiAnswer, mediaUrl);
         updateAnswerSource(session.getId(), response.getAnswerSource());
         return Result.success(response);
     }
@@ -260,7 +270,12 @@ public class ChatController {
         long start = System.currentTimeMillis();
         Long userId = getUserIdOpt(request);
         ChatSession session = chatSessionService.getOrCreateActiveSession(userId);
-        String queryText = audioService.speechToText(audioFile);
+        String queryText;
+        try {
+            queryText = audioService.speechToText(audioFile);
+        } catch (Exception ex) {
+            return Result.error(ex.getMessage());
+        }
 
         if (!CasualConversationUtils.isCasualOnly(queryText)) {
             statHotQuestionService.recordQuestion(queryText);
@@ -290,7 +305,13 @@ public class ChatController {
         saveMessage(session.getId(), 1, 2, queryText, "url_to_user_audio");
         AiChatResponse response = aiChatService.chat(userId, session.getId(), queryText, null);
         String aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, response.getAnswer());
-        String responseMediaUrl = audioService.textToSpeech(aiAnswer);
+        String responseMediaUrl;
+        try {
+            responseMediaUrl = audioService.textToSpeech(aiAnswer);
+        } catch (Exception ex) {
+            responseMediaUrl = null;
+            aiAnswer = aiAnswer + "\n\n语音回答生成失败：" + ex.getMessage();
+        }
         response.setAnswer(aiAnswer);
         response.setRecognizedText(queryText);
         response.setMediaUrl(responseMediaUrl);

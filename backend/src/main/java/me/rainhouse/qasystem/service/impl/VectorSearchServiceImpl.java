@@ -114,6 +114,12 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
     @Override
     public VectorSearchResponse search(String query, String moduleType, Integer topK, Long userId, Long sessionId) {
+        List<String> moduleTypes = StringUtils.hasText(moduleType) ? List.of(moduleType.trim()) : List.of();
+        return search(query, moduleTypes, topK, userId, sessionId);
+    }
+
+    @Override
+    public VectorSearchResponse search(String query, List<String> moduleTypes, Integer topK, Long userId, Long sessionId) {
         if (!StringUtils.hasText(query)) {
             throw new IllegalArgumentException("检索问题不能为空");
         }
@@ -122,17 +128,31 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
         int resultLimit = topK == null || topK <= 0 ? defaultTopResults : topK;
         float[] queryVector = embeddingService.embed(query);
-        List<VectorSearchResult> results = searchAndRerank(query, queryVector, moduleSearchTerms(moduleType), resultLimit);
+        List<String> normalizedModules = normalizeModules(moduleTypes);
+        List<String> moduleTerms = normalizedModules.stream()
+                .flatMap(module -> moduleSearchTerms(module).stream())
+                .distinct()
+                .toList();
+        List<VectorSearchResult> results = searchAndRerank(query, queryVector, moduleTerms, resultLimit);
+        if (!moduleTerms.isEmpty() && !isHit(results)) {
+            List<VectorSearchResult> unrestrictedResults = searchAndRerank(query, queryVector, List.of(), resultLimit);
+            if (topScore(unrestrictedResults) > topScore(results)) {
+                results = unrestrictedResults;
+            }
+        }
         VectorSearchResult topResult = results.isEmpty() ? null : results.get(0);
         HitDecision hitDecision = hitRuleEngine.decide(topResult == null ? 0.0 : topResult.finalScore());
 
         double topScore = topResult == null ? 0.0 : topResult.finalScore();
         long responseTimeMs = System.currentTimeMillis() - start;
-        saveHitRecord(query, moduleType, userId, sessionId, topResult, hitDecision, responseTimeMs);
+        String resolvedModule = topResult != null && StringUtils.hasText(topResult.moduleType())
+                ? topResult.moduleType()
+                : String.join(",", normalizedModules);
+        saveHitRecord(query, resolvedModule, userId, sessionId, topResult, hitDecision, responseTimeMs);
 
         return new VectorSearchResponse(
                 query,
-                moduleType,
+                resolvedModule,
                 hitDecision.hitStatus(),
                 hitDecision.hitLabel(),
                 topScore,
@@ -141,6 +161,25 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 responseTimeMs,
                 results
         );
+    }
+
+    private List<String> normalizeModules(List<String> moduleTypes) {
+        if (moduleTypes == null) {
+            return List.of();
+        }
+        return moduleTypes.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    private boolean isHit(List<VectorSearchResult> results) {
+        return hitRuleEngine.decide(topScore(results)).hitStatus() != 0;
+    }
+
+    private double topScore(List<VectorSearchResult> results) {
+        return results == null || results.isEmpty() ? 0.0 : results.get(0).finalScore();
     }
 
     private List<VectorSearchResult> searchAndRerank(String query,
@@ -354,10 +393,11 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                                HitDecision hitDecision,
                                long responseTimeMs) {
         QuestionHitRecord record = new QuestionHitRecord();
+        String statQuestion = statQuestion(query);
         record.setUserId(userId);
         record.setSessionId(sessionId);
-        record.setOriginalQuestion(query);
-        record.setRewriteQuestion(query);
+        record.setOriginalQuestion(statQuestion);
+        record.setRewriteQuestion(statQuestion);
         record.setModuleType(moduleType);
         record.setTopScore(BigDecimal.valueOf(topResult == null ? 0.0 : topResult.finalScore()).setScale(4, RoundingMode.HALF_UP));
         record.setHitStatus(hitDecision.hitStatus());
@@ -365,5 +405,21 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         record.setResponseTimeMs(responseTimeMs);
         record.setCreatedAt(LocalDateTime.now());
         questionHitRecordMapper.insert(record);
+    }
+
+    private String statQuestion(String query) {
+        if (!StringUtils.hasText(query)) {
+            return "";
+        }
+        String text = query.trim();
+        int currentQuestionIndex = text.lastIndexOf("当前问题：");
+        if (currentQuestionIndex >= 0) {
+            text = text.substring(currentQuestionIndex + "当前问题：".length()).trim();
+        }
+        int currentUserQuestionIndex = text.lastIndexOf("当前用户问题：");
+        if (currentUserQuestionIndex >= 0) {
+            text = text.substring(currentUserQuestionIndex + "当前用户问题：".length()).trim();
+        }
+        return text.length() > 500 ? text.substring(0, 500) : text;
     }
 }

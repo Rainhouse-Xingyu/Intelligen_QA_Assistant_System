@@ -19,9 +19,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -235,14 +237,31 @@ public class StatHotQuestionServiceImpl extends ServiceImpl<StatHotQuestionMappe
             qw.eq("source_type", "common_question");
         }
         if (StringUtils.hasText(moduleType)) {
-            String term = moduleType.trim();
-            qw.and(wrapper -> wrapper.eq("module_type", term)
-                    .or()
-                    .eq("category_l1_name", term)
-                    .or()
-                    .eq("category_l2_name", term)
-                    .or()
-                    .eq("category_l3_name", term));
+            List<String> terms = categoryTerms(moduleType);
+            qw.and(wrapper -> {
+                boolean first = true;
+                for (String term : terms) {
+                    if (!first) {
+                        wrapper.or();
+                    }
+                    first = false;
+                    wrapper.eq("module_type", term)
+                            .or()
+                            .eq("category_l1_name", term)
+                            .or()
+                            .eq("category_l2_name", term)
+                            .or()
+                            .eq("category_l3_name", term)
+                            .or()
+                            .apply("{0} LIKE CONCAT(module_type, '%')", term)
+                            .or()
+                            .apply("module_type LIKE CONCAT({0}, '%')", term)
+                            .or()
+                            .apply("{0} LIKE CONCAT(category_l1_name, '%')", term)
+                            .or()
+                            .apply("category_l1_name LIKE CONCAT({0}, '%')", term);
+                }
+            });
         }
         qw.last("ORDER BY RAND() LIMIT " + safeLimit);
 
@@ -339,6 +358,36 @@ public class StatHotQuestionServiceImpl extends ServiceImpl<StatHotQuestionMappe
             return 20;
         }
         return Math.min(limit, 100);
+    }
+
+    private List<String> categoryTerms(String moduleType) {
+        String term = moduleType == null ? "" : moduleType.trim();
+        if (term.isEmpty()) {
+            return List.of();
+        }
+        Set<String> terms = new LinkedHashSet<>();
+        terms.add(term);
+        if (term.contains("考务") || term.contains("考试")) {
+            terms.add("考务通知");
+            terms.add("考务资料");
+            terms.add("考务");
+        }
+        if (term.contains("教学")) {
+            terms.add("教学运行");
+            terms.add("教学帮扶");
+            terms.add("教学");
+        }
+        if (term.contains("学业")) {
+            terms.add("学业帮扶");
+            terms.add("教学帮扶");
+            terms.add("学业");
+        }
+        if (term.contains("心理")) {
+            terms.add("心理辅导");
+            terms.add("心理指导");
+            terms.add("心理");
+        }
+        return terms.stream().filter(StringUtils::hasText).toList();
     }
 
     private String text(Object value) {

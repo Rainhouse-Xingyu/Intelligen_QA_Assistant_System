@@ -14,11 +14,21 @@ export default {
     const logoRef = ref(null)
     const logoTone = ref('logo--dark')
     const commonQuestions = ref([])
+    const commonQuestionsLoading = ref(false)
     const hotQuestions = ref([])
     const commonQuestionModule = ref('')
     const hotBubbleVisible = ref(false)
     const mascotPosition = ref({ x: 28, y: 96 })
     const mascotDragging = ref(false)
+    const mascotBubblePlacement = computed(() => {
+      const margin = 390
+      const verticalMargin = 250
+      const x = mascotPosition.value.x
+      const y = mascotPosition.value.y
+      if (x > window.innerWidth - margin) return 'bubble-left'
+      if (y > window.innerHeight - verticalMargin) return 'bubble-up'
+      return 'bubble-right'
+    })
     let hotBubbleTimer = 0
     let dragOffset = { x: 0, y: 0 }
     const categories = [
@@ -158,6 +168,7 @@ export default {
     })
 
     const loadCommonQuestions = async () => {
+      commonQuestionsLoading.value = true
       try {
         const params = { limit: 8 }
         if (commonQuestionModule.value) {
@@ -169,6 +180,8 @@ export default {
           : []
       } catch {
         commonQuestions.value = []
+      } finally {
+        commonQuestionsLoading.value = false
       }
     }
 
@@ -405,12 +418,14 @@ export default {
       logoRef,
       logoTone,
       commonQuestions,
+      commonQuestionsLoading,
       hotQuestions,
       commonQuestionModule,
       commonQuestionCategories,
       hotBubbleVisible,
       mascotPosition,
       mascotDragging,
+      mascotBubblePlacement,
       categories,
       isLoggedIn,
       userInfo,

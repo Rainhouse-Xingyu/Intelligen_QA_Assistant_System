@@ -1,16 +1,13 @@
 <template>
   <div class="app-container">
-    <Knowledge v-if="currentPage === 'knowledge'" />
-    <SurveyAdmin v-else-if="currentPage === 'survey-admin'" />
+    <SurveyAdmin v-if="currentPage === 'survey-admin'" />
     <StudentSurvey
       v-else-if="currentPage === 'student-survey'"
       @go-home="currentPage = 'home'"
       @navigate-login="currentPage = 'login'"
     />
-    <VectorPage v-else-if="currentPage === 'vector'" />
     <Dashboard v-else-if="currentPage === 'dashboard'" />
     <Academic v-else-if="currentPage === 'academic'" />
-    <AdminChat v-else-if="currentPage === 'admin-chat'" />
     <LoginPage
       v-else-if="currentPage === 'login'"
       @login-success="onLoginSuccess"
@@ -37,23 +34,17 @@
 import { ref } from 'vue'
 import Home from './views/home.vue'
 import Dialogue from './views/dialogue.vue'
-import Knowledge from './views/knowledge.vue'
 import SurveyAdmin from './views/survey.vue'
 import StudentSurvey from './views/studentSurvey.vue'
-import VectorPage from './views/vector.vue'
 import Dashboard from './views/dashboard.vue'
 import Academic from './views/academic.vue'
-import AdminChat from './views/chat.vue'
 import LoginPage from './views/LoginPage.vue'
 
 const routeMap = {
-  '/admin/knowledge': 'knowledge',
   '/admin/survey': 'survey-admin',
   '/survey': 'student-survey',
-  '/admin/vector': 'vector',
   '/admin/dashboard': 'dashboard',
-  '/admin/academic': 'academic',
-  '/admin/chat': 'admin-chat'
+  '/admin/academic': 'academic'
 }
 
 const currentPage = ref(routeMap[window.location.pathname] || 'home')

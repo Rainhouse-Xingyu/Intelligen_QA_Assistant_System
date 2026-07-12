@@ -36,7 +36,7 @@ class AiChatServiceImplTest {
         UnrecognizedQueryService unrecognizedQueryService = mock(UnrecognizedQueryService.class);
         ChatMemoryService chatMemoryService = noMemory();
         when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
-        when(vectorSearchService.search(any(), any(), any(), any(), any())).thenReturn(searchResponse(0, 0.31));
+        when(vectorSearchService.search(any(), any(String.class), any(), any(), any())).thenReturn(searchResponse(0, 0.31));
         when(answerGeneratorService.generate(any(), any(), any(), any())).thenReturn(null);
 
         AiChatServiceImpl service = new AiChatServiceImpl(
@@ -66,7 +66,7 @@ class AiChatServiceImplTest {
         AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
         ChatMemoryService chatMemoryService = noMemory();
         when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
-        when(vectorSearchService.search(any(), any(), any(), any(), any())).thenReturn(searchResponse(1, 0.62));
+        when(vectorSearchService.search(any(), any(String.class), any(), any(), any())).thenReturn(searchResponse(1, 0.62));
         when(answerGeneratorService.generate(any(), any(), any(), any())).thenReturn(null);
 
         AiChatServiceImpl service = new AiChatServiceImpl(
@@ -99,7 +99,8 @@ class AiChatServiceImplTest {
         AnswerGeneratorService answerGeneratorService = mock(AnswerGeneratorService.class);
         ChatMemoryService chatMemoryService = noMemory();
         when(questionRawMapper.insert(any(QuestionRaw.class))).thenReturn(1);
-        when(vectorSearchService.search(any(), any(), any(), any(), any())).thenReturn(searchResponse(1, 0.72));
+        when(vectorSearchService.search(any(), any(String.class), any(), any(), any()))
+                .thenReturn(searchResponse(1, 0.72, "教学运行"));
         when(answerGeneratorService.generate(any(), any(), any(), any())).thenReturn("选课安排以教务部通知为准");
 
         AiChatServiceImpl service = new AiChatServiceImpl(
@@ -175,8 +176,8 @@ class AiChatServiceImplTest {
 
         assertEquals("心理辅导", response.getModuleType());
         assertEquals("LOCAL_PSY", response.getAnswerSource());
-        verify(classifierService, never()).classify(any(), any());
-        verify(vectorSearchService, never()).search(any(), any(), any(), any(), any());
+        verify(classifierService, never()).classifyCandidates(any(), any());
+        verify(vectorSearchService, never()).search(any(), any(String.class), any(), any(), any());
     }
 
     private static ChatMemoryService noMemory() {
@@ -238,11 +239,15 @@ class AiChatServiceImplTest {
     }
 
     private static VectorSearchResponse searchResponse(Integer hitStatus, double topScore) {
+        return searchResponse(hitStatus, topScore, "考务通知");
+    }
+
+    private static VectorSearchResponse searchResponse(Integer hitStatus, double topScore, String moduleType) {
         VectorSearchResult result = new VectorSearchResult(
                 100L,
                 "线上监考",
                 "线上监考文章内容",
-                "考务通知",
+                moduleType,
                 null,
                 null,
                 null,
@@ -255,7 +260,7 @@ class AiChatServiceImplTest {
         );
         return new VectorSearchResponse(
                 "query",
-                "考务通知",
+                moduleType,
                 hitStatus,
                 hitStatus == null || hitStatus == 0 ? "未命中" : "弱命中",
                 topScore,

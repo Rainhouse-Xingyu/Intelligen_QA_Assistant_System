@@ -37,4 +37,33 @@ class ChatMemoryServiceImplTest {
         assertTrue(retrievalQuery.contains("转专业"));
         assertTrue(retrievalQuery.contains("当前问题：这个流程是什么？"));
     }
+
+    @Test
+    void shortSelfContainedQuestionStartsNewTopic() {
+        ChatMemoryServiceImpl service = new ChatMemoryServiceImpl(null, 12, 1200, 800);
+
+        assertEquals("怎么请假", service.buildRetrievalQuery("怎么请假", "用户：重修如何报名？"));
+        assertEquals("怎么请假", service.buildGenerationQuestion("怎么请假", "用户：重修如何报名？"));
+    }
+
+    @Test
+    void subjectlessFollowUpUsesHistoryForRetrievalAndGeneration() {
+        ChatMemoryServiceImpl service = new ChatMemoryServiceImpl(null, 12, 1200, 800);
+        String memory = "用户：重修如何报名？";
+
+        String retrievalQuery = service.buildRetrievalQuery("截止到什么时候？", memory);
+        String generationQuestion = service.buildGenerationQuestion("截止到什么时候？", memory);
+
+        assertTrue(retrievalQuery.contains("重修如何报名"));
+        assertTrue(generationQuestion.contains("重修如何报名"));
+    }
+
+    @Test
+    void completeNewQuestionDoesNotUseHistoryForGeneration() {
+        ChatMemoryServiceImpl service = new ChatMemoryServiceImpl(null, 12, 1200, 800);
+
+        String question = "最近总是睡不着怎么办？";
+
+        assertEquals(question, service.buildGenerationQuestion(question, "用户：重修如何报名？"));
+    }
 }

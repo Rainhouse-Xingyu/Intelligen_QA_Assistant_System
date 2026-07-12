@@ -4,6 +4,7 @@ import me.rainhouse.qasystem.service.vector.VectorSearchResult;
 import me.rainhouse.qasystem.service.kb.FaqItem;
 
 import java.util.List;
+import java.util.Map;
 
 public interface LocalModelClient {
 
@@ -18,6 +19,11 @@ public interface LocalModelClient {
     String rewrite(String query);
 
     String classify(String query, List<String> candidateModules);
+
+    default Map<String, Double> classifyScores(String query, List<String> candidateModules) {
+        String module = classify(query, candidateModules);
+        return module == null || module.isBlank() ? Map.of() : Map.of(module, 1.0);
+    }
 
     String generate(String originalQuestion, String rewriteQuestion, List<VectorSearchResult> references);
 

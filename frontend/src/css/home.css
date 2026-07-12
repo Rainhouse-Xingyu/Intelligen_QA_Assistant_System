@@ -72,22 +72,30 @@
   font-size: 12px;
   margin-left: 4px;
 }
-.nav-item:hover .dropdown {
-  display: flex;
-}
 .dropdown {
-  display: none;
   position: absolute;
   top: 100%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(8px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  display: flex;
   flex-direction: column;
   min-width: 120px;
   padding: 8px 0;
   z-index: 100;
+  transition: opacity 180ms ease, transform 180ms ease, visibility 180ms ease;
+}
+.nav-item:hover .dropdown,
+.nav-item:focus-within .dropdown {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
 }
 .dropdown-item {
   padding: 10px 16px;
@@ -293,6 +301,15 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
+
+.common-question-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 24px 12px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
 .common-question-card {
   min-height: 88px;
   border: 1px solid #dbe8f8;
@@ -377,6 +394,14 @@
   border: 1px solid #dbe8f8;
   box-shadow: 0 16px 36px rgba(18, 48, 92, 0.16);
 }
+.mascot-hotspot.bubble-left .mascot-bubble {
+  left: auto;
+  right: 82px;
+}
+.mascot-hotspot.bubble-up .mascot-bubble {
+  top: auto;
+  bottom: 82px;
+}
 .mascot-bubble::before {
   content: "";
   position: absolute;
@@ -388,6 +413,17 @@
   border-left: 1px solid #dbe8f8;
   border-bottom: 1px solid #dbe8f8;
   transform: rotate(45deg);
+}
+.mascot-hotspot.bubble-left .mascot-bubble::before {
+  left: auto;
+  right: -9px;
+  border-left: 0;
+  border-right: 1px solid #dbe8f8;
+  border-bottom: 1px solid #dbe8f8;
+}
+.mascot-hotspot.bubble-up .mascot-bubble::before {
+  top: auto;
+  bottom: 34px;
 }
 .mascot-bubble-title {
   margin-bottom: 8px;

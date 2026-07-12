@@ -126,7 +126,7 @@
            </div>
         </div>
 
-        <section v-if="commonQuestions.length" class="common-question-panel">
+        <section class="common-question-panel">
           <div class="common-panel-head">
             <h2>常见问题</h2>
             <button class="refresh-common-btn" @click="loadCommonQuestions">换一批</button>
@@ -140,6 +140,8 @@
             >{{ cat.label }}</button>
           </div>
           <div class="common-question-grid">
+            <p v-if="commonQuestionsLoading" class="common-question-empty">正在加载...</p>
+            <p v-else-if="!commonQuestions.length" class="common-question-empty">该分类暂无常见问题</p>
             <button
               v-for="(item, index) in commonQuestions"
               :key="item.id || item.questionText || index"
@@ -184,7 +186,7 @@
          </div>
       </div>
 
-      <section v-if="commonQuestions.length" class="common-question-panel">
+      <section class="common-question-panel">
         <div class="common-panel-head">
           <h2>常见问题</h2>
           <button class="refresh-common-btn" @click="loadCommonQuestions">换一批</button>
@@ -198,6 +200,8 @@
           >{{ cat.label }}</button>
         </div>
         <div class="common-question-grid">
+          <p v-if="commonQuestionsLoading" class="common-question-empty">正在加载...</p>
+          <p v-else-if="!commonQuestions.length" class="common-question-empty">该分类暂无常见问题</p>
           <button
             v-for="(item, index) in commonQuestions"
             :key="item.id || item.questionText || index"
@@ -214,7 +218,7 @@
     <div
       v-if="isLoggedIn && isStudent"
       class="mascot-hotspot"
-      :class="{ dragging: mascotDragging }"
+      :class="[{ dragging: mascotDragging }, mascotBubblePlacement]"
       :style="{ left: `${mascotPosition.x}px`, top: `${mascotPosition.y}px` }"
       @mousedown.prevent="startMascotDrag"
       @touchstart.prevent="startMascotDrag"

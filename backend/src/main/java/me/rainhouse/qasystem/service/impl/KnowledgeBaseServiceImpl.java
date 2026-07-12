@@ -39,8 +39,10 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
@@ -360,7 +362,27 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
                     .like(KbQaEntry::getAnswer, trimmedKeyword));
         }
         if (StringUtils.hasText(moduleType)) {
-            wrapper.eq(KbQaEntry::getModuleType, moduleType.trim());
+            List<String> terms = categoryTerms(moduleType);
+            wrapper.and(w -> {
+                boolean first = true;
+                for (String term : terms) {
+                    if (!first) {
+                        w.or();
+                    }
+                    first = false;
+                    w.eq(KbQaEntry::getModuleType, term)
+                            .or()
+                            .eq(KbQaEntry::getCategoryL1Name, term)
+                            .or()
+                            .eq(KbQaEntry::getCategoryL2Name, term)
+                            .or()
+                            .eq(KbQaEntry::getCategoryL3Name, term)
+                            .or()
+                            .like(KbQaEntry::getModuleType, term)
+                            .or()
+                            .like(KbQaEntry::getCategoryL1Name, term);
+                }
+            });
         }
         if (status != null) {
             wrapper.eq(KbQaEntry::getStatus, status);
@@ -885,6 +907,36 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KbDocumentMapper, KbDo
 
     private String normalizeModuleType(String moduleType) {
         return StringUtils.hasText(moduleType) ? moduleType.trim() : "通用知识库";
+    }
+
+    private List<String> categoryTerms(String moduleType) {
+        String term = moduleType == null ? "" : moduleType.trim();
+        if (term.isEmpty()) {
+            return List.of();
+        }
+        Set<String> terms = new LinkedHashSet<>();
+        terms.add(term);
+        if (term.contains("考务") || term.contains("考试")) {
+            terms.add("考务通知");
+            terms.add("考务资料");
+            terms.add("考务");
+        }
+        if (term.contains("教学")) {
+            terms.add("教学运行");
+            terms.add("教学帮扶");
+            terms.add("教学");
+        }
+        if (term.contains("学业")) {
+            terms.add("学业帮扶");
+            terms.add("教学帮扶");
+            terms.add("学业");
+        }
+        if (term.contains("心理")) {
+            terms.add("心理辅导");
+            terms.add("心理指导");
+            terms.add("心理");
+        }
+        return terms.stream().filter(StringUtils::hasText).toList();
     }
 
     private String limitMessage(String message) {
