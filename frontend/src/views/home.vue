@@ -221,15 +221,26 @@
       v-if="isLoggedIn && isStudent"
       class="mascot-hotspot"
       :class="[{ dragging: mascotDragging }, mascotBubblePlacement]"
-      :style="{ left: `${mascotPosition.x}px`, top: `${mascotPosition.y}px` }"
+      :style="{
+        left: `${mascotPosition.x}px`,
+        top: `${mascotPosition.y}px`
+      }"
       @mousedown.prevent="startMascotDrag"
       @touchstart.prevent="startMascotDrag"
       @mouseenter="showHotBubble"
+      @click.stop="handleMascotTap"
     >
-      <div class="mascot-bubble" v-if="hotBubbleVisible && hotQuestions.length">
+      <div class="mascot-bubble" v-if="hotBubbleVisible" @mousedown.stop @touchstart.stop>
         <div class="mascot-bubble-title">热门问题</div>
         <button
-          v-for="(item, index) in hotQuestions"
+          class="mascot-bubble-close"
+          type="button"
+          aria-label="关闭热门问题"
+          title="关闭"
+          @click.stop="closeHotBubble"
+        >×</button>
+        <button
+          v-for="(item, index) in mascotQuestions"
           :key="item.id || item.questionText || index"
           type="button"
           @click.stop="handleHotQuestion(item)"
@@ -237,9 +248,14 @@
           <span>{{ index + 1 }}</span>
           <strong>{{ item.questionText }}</strong>
         </button>
+        <p v-if="!mascotQuestions.length" class="mascot-bubble-empty">正在准备热门问题...</p>
       </div>
-      <div class="mascot-avatar" title="东小龙">
-        <span>东</span>
+      <div
+        class="mascot-avatar dragon-mascot"
+        title="Dong Xiaolong"
+        aria-label="Dong Xiaolong assistant"
+      >
+        <img class="dragon-image" src="/dong-xiaolong-mascot.png?v=3" alt="东小龙" />
       </div>
     </div>
   </div>

@@ -374,14 +374,16 @@
 .mascot-hotspot {
   position: fixed;
   z-index: 1200;
-  width: 68px;
-  height: 68px;
+  width: 130px;
+  height: 146px;
   user-select: none;
   cursor: grab;
   touch-action: none;
+  transition: left 1.2s cubic-bezier(0.22, 1, 0.36, 1), top 1.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .mascot-hotspot.dragging {
   cursor: grabbing;
+  transition: none;
 }
 .mascot-avatar {
   width: 68px;
@@ -393,7 +395,7 @@
   place-items: center;
   border: 3px solid #fff;
 }
-.mascot-avatar span {
+.mascot-avatar:not(.dragon-mascot) > span {
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -404,12 +406,37 @@
   font-size: 22px;
   font-weight: 1000;
 }
+.mascot-hotspot > .mascot-avatar:not(.dragon-mascot) {
+  display: none;
+}
+.dragon-mascot {
+  position: relative;
+  width: 130px;
+  height: 146px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  display: block;
+}
+.dragon-image {
+  width: 130px;
+  height: 146px;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: 50% 12%;
+  filter: drop-shadow(0 12px 16px rgba(27, 87, 148, 0.14));
+  transform: none;
+  transition: none;
+}
 .mascot-bubble {
   position: absolute;
-  left: 82px;
-  top: -14px;
+  left: 140px;
+  top: 10px;
   width: min(360px, calc(100vw - 112px));
-  padding: 12px;
+  padding: 14px 12px 12px;
   border-radius: 8px;
   background: #fff;
   border: 1px solid #dbe8f8;
@@ -417,11 +444,11 @@
 }
 .mascot-hotspot.bubble-left .mascot-bubble {
   left: auto;
-  right: 82px;
+  right: 140px;
 }
 .mascot-hotspot.bubble-up .mascot-bubble {
   top: auto;
-  bottom: 82px;
+  bottom: 112px;
 }
 .mascot-bubble::before {
   content: "";
@@ -447,10 +474,34 @@
   bottom: 34px;
 }
 .mascot-bubble-title {
-  margin-bottom: 8px;
+  margin: 0 34px 8px 0;
   color: #173875;
   font-size: 14px;
   font-weight: 1000;
+}
+.mascot-bubble .mascot-bubble-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: #f1f6ff;
+  color: #54709f;
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mascot-bubble .mascot-bubble-close:hover {
+  background: #e8f0ff;
+  color: #173875;
 }
 .mascot-bubble button {
   width: 100%;
@@ -487,6 +538,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mascot-bubble-empty {
+  margin: 4px 0 0;
+  padding: 14px 8px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
 }
 @media (max-width: 1100px) {
   .common-question-grid {

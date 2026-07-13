@@ -74,6 +74,9 @@ export default {
       { label: '全部', value: '' },
       ...categories
     ]
+    const mascotQuestions = computed(() => (
+      hotQuestions.value.length ? hotQuestions.value : commonQuestions.value.slice(0, 5)
+    ))
     const topNavigationCategories = computed(() => {
       const source = categoryTree.value.length ? categoryTree.value : DEFAULT_NAV_CATEGORIES
       return source.slice(0, 3)
@@ -275,12 +278,36 @@ export default {
     }
 
     const showHotBubble = () => {
-      if (!hotQuestions.value.length) return
       hotBubbleVisible.value = true
       window.clearTimeout(hotBubbleTimer)
       hotBubbleTimer = window.setTimeout(() => {
         hotBubbleVisible.value = false
       }, 5000)
+    }
+
+    const closeHotBubble = () => {
+      hotBubbleVisible.value = false
+      window.clearTimeout(hotBubbleTimer)
+    }
+
+    const handleMascotTap = async () => {
+      if (!hotQuestions.value.length) {
+        await loadHotQuestions()
+      }
+      showHotBubble()
+    }
+
+    const getMascotBounds = () => ({
+      maxX: Math.max(0, window.innerWidth - 138),
+      maxY: Math.max(0, window.innerHeight - 154)
+    })
+
+    const clampMascotPosition = (x, y) => {
+      const { maxX, maxY } = getMascotBounds()
+      return {
+        x: Math.min(maxX, Math.max(0, x)),
+        y: Math.min(maxY, Math.max(0, y))
+      }
     }
 
     const changeCommonQuestionModule = async (moduleType) => {
@@ -417,12 +444,10 @@ export default {
       if (!mascotDragging.value) return
       event.preventDefault?.()
       const pointer = event.touches?.[0] || event
-      const maxX = Math.max(0, window.innerWidth - 86)
-      const maxY = Math.max(0, window.innerHeight - 86)
-      mascotPosition.value = {
-        x: Math.min(maxX, Math.max(0, pointer.clientX - dragOffset.x)),
-        y: Math.min(maxY, Math.max(0, pointer.clientY - dragOffset.y))
-      }
+      mascotPosition.value = clampMascotPosition(
+        pointer.clientX - dragOffset.x,
+        pointer.clientY - dragOffset.y
+      )
     }
 
     const stopMascotDrag = () => {
@@ -511,6 +536,7 @@ export default {
       commonQuestions,
       commonQuestionsLoading,
       hotQuestions,
+      mascotQuestions,
       topNavigationCategories,
       commonQuestionModule,
       commonQuestionCategories,
@@ -535,6 +561,8 @@ export default {
       handleHotQuestion,
       handleCategoryShortcut,
       showHotBubble,
+      closeHotBubble,
+      handleMascotTap,
       startMascotDrag,
       newConversation,
       selectConversation,
