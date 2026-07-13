@@ -1,14 +1,20 @@
 package me.rainhouse.qasystem.controller;
 
 import me.rainhouse.qasystem.common.result.Result;
+import me.rainhouse.qasystem.common.dto.academic.SurveyDiagnosisDTO;
 import me.rainhouse.qasystem.entity.AcademicWarningRecord;
 import me.rainhouse.qasystem.entity.StudentProfile;
 import me.rainhouse.qasystem.entity.StudentWarningLevel;
 import me.rainhouse.qasystem.service.AcademicSupportService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -70,6 +76,32 @@ public class AcademicSupportController {
         }
     }
 
+    @GetMapping("/warning-levels/template")
+    public ResponseEntity<byte[]> exportWarningLevelTemplate() {
+        return excelResponse(academicSupportService.exportWarningLevelTemplate(), "预警等级导入模板.xlsx");
+    }
+
+    @GetMapping("/warning-levels/export")
+    public ResponseEntity<byte[]> exportWarningLevels() {
+        return excelResponse(academicSupportService.exportWarningLevelsExcel(), "人工预警等级报告.xlsx");
+    }
+
+    @GetMapping("/survey-diagnoses")
+    public Result<List<SurveyDiagnosisDTO>> listSurveyDiagnoses(
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        try {
+            return Result.success(academicSupportService.listSurveyDiagnoses(limit));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @GetMapping("/survey-diagnoses/export")
+    public ResponseEntity<byte[]> exportSurveyDiagnoses(
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        return excelResponse(academicSupportService.exportSurveyDiagnosesExcel(limit), "问卷诊断与帮扶报告.xlsx");
+    }
+
     /**
      * 【5.3模块】辅导员/管理员一键生成帮扶成效报告PDF
      */
@@ -81,5 +113,13 @@ public class AcademicSupportController {
         } catch (Exception e) {
             return Result.error("报告生成失败: " + e.getMessage());
         }
+    }
+
+    private ResponseEntity<byte[]> excelResponse(byte[] bytes, String filename) {
+        String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFilename)
+                .body(bytes);
     }
 }

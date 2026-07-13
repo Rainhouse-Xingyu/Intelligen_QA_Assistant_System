@@ -49,7 +49,15 @@
                 <span>{{ answer.questionText }}</span>
                 <em>{{ answer.questionType === 2 ? '文本题' : '量表题' }}</em>
               </div>
-              <div class="admin-answer-value">{{ formatAnswerValue(answer) }}</div>
+              <div class="admin-answer-value">
+                {{ formatAnswerValue(answer) }}
+                <span
+                  v-if="answer.riskScore"
+                  :class="['answer-score', riskScoreClass(answer.riskScore)]"
+                >
+                  风险分：{{ answer.riskScore }} / 5 · {{ answer.riskLevel }}
+                </span>
+              </div>
             </article>
           </section>
         </div>
@@ -152,13 +160,20 @@
             <div class="two-cols">
               <label>
                 开始时间
-                <input v-model="taskForm.startTime" class="input" type="datetime-local" />
+                <span class="datetime-field">
+                  <ClockIcon class="datetime-icon" />
+                  <input v-model="taskForm.startTime" class="input datetime-input" type="datetime-local" step="1" />
+                </span>
               </label>
               <label>
                 结束时间
-                <input v-model="taskForm.endTime" class="input" type="datetime-local" />
+                <span class="datetime-field">
+                  <ClockIcon class="datetime-icon" />
+                  <input v-model="taskForm.endTime" class="input datetime-input" type="datetime-local" step="1" />
+                </span>
               </label>
             </div>
+            <p class="time-tip">时间支持精确到秒，例如 2026-07-15 10:14:30。</p>
             <label class="check-row">
               <input v-model="taskForm.publishNow" type="checkbox" />
               创建后立即发布
@@ -303,7 +318,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { apiDelete, apiDownload, apiForm, apiGet, apiJson, apiUpload } from '../js/adminApi'
 import '../css/admin.css'
 import SurveyTrendChart from '../components/SurveyTrendChart.vue'
-import { AdminSidebar, AdminTopbar, CheckIcon, FileIcon, UploadIcon } from './shared/adminParts'
+import { AdminSidebar, AdminTopbar, CheckIcon, ClockIcon, FileIcon, UploadIcon } from './shared/adminParts'
 
 const templates = ref([])
 const surveys = ref([])
@@ -639,7 +654,14 @@ function formatAnswerValue(answer) {
     ? supportFrequencyLabels
     : scaleAnswerLabels
   const label = labels[answer.numericAnswer] || '未选择'
-  return `${answer.numericAnswer || '-'} - ${label}`
+  return label
+}
+
+function riskScoreClass(score) {
+  if (score >= 5) return 'red'
+  if (score >= 4) return 'orange'
+  if (score >= 3) return 'yellow'
+  return 'green'
 }
 
 function formatTime(value) {
@@ -681,7 +703,8 @@ function formatAcademicYear(year) {
 }
 
 function toApiDateTime(value) {
-  return value ? `${value}:00` : null
+  if (!value) return null
+  return value.length === 16 ? `${value}:00` : value
 }
 
 onMounted(async () => {
@@ -722,10 +745,32 @@ label {
 .two-cols label {
   min-width: 0;
 }
-.two-cols input[type="datetime-local"] {
+.datetime-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+.datetime-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  color: #315dbc;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 1;
+}
+.two-cols .datetime-input {
   min-width: 0;
   font-size: 14px;
-  padding: 0 10px;
+  padding: 0 10px 0 38px;
+}
+.time-tip {
+  margin: -8px 0 14px;
+  color: #6e82b1;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .check-row {
@@ -1006,9 +1051,42 @@ label {
   color: #0d7a50;
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   padding: 8px 14px;
   font-weight: 900;
   line-height: 1.45;
+}
+
+.answer-score {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #173875;
+  background: #fff;
+}
+
+.answer-score.green {
+  color: #159461;
+  background: #dcfff0;
+}
+
+.answer-score.yellow {
+  color: #9f7100;
+  background: #fff2bd;
+}
+
+.answer-score.orange {
+  color: #bc5a00;
+  background: #ffe6d3;
+}
+
+.answer-score.red {
+  color: #d93c58;
+  background: #ffe3eb;
 }
 
 .trend-panel {

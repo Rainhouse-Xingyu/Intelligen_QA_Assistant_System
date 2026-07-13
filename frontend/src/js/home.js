@@ -204,6 +204,7 @@ export default {
     }
 
     const deleteConversation = (id) => {
+      if (!confirm('确认删除该历史对话？')) return
       conversations.value = conversations.value.filter(c => c.id !== id)
       saveConversations()
     }
@@ -316,6 +317,14 @@ export default {
         x: Math.min(maxX, Math.max(0, x)),
         y: Math.min(maxY, Math.max(0, y))
       }
+    }
+
+    const placeMascotOnRightCenter = () => {
+      const { maxX, maxY } = getMascotBounds()
+      mascotPosition.value = clampMascotPosition(
+        maxX - 24,
+        Math.round(maxY / 2)
+      )
     }
 
     const changeCommonQuestionModule = async (moduleType) => {
@@ -722,6 +731,7 @@ export default {
     }
 
     onMounted(() => {
+      placeMascotOnRightCenter()
       restoreSession()
       loadCategoryTree()
       loadCommonQuestions()

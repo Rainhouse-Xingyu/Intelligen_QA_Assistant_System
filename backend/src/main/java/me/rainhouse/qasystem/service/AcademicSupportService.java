@@ -1,6 +1,7 @@
 package me.rainhouse.qasystem.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import me.rainhouse.qasystem.common.dto.academic.SurveyDiagnosisDTO;
 import me.rainhouse.qasystem.entity.AcademicWarningRecord;
 import me.rainhouse.qasystem.entity.StudentProfile;
 import me.rainhouse.qasystem.entity.StudentWarningLevel;
@@ -30,6 +31,14 @@ public interface AcademicSupportService extends IService<AcademicWarningRecord> 
     StudentWarningLevel saveWarningLevel(StudentWarningLevel warningLevel);
 
     int importWarningLevels(MultipartFile file);
+
+    byte[] exportWarningLevelTemplate();
+
+    byte[] exportWarningLevelsExcel();
+
+    List<SurveyDiagnosisDTO> listSurveyDiagnoses(Integer limit);
+
+    byte[] exportSurveyDiagnosesExcel(Integer limit);
 
     /**
      * 【5.3模块】帮扶成效报告自动化生成（模拟生成可下载的报告URL）

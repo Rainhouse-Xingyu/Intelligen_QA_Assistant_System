@@ -12,4 +12,6 @@ public class SurveySubmissionAnswerDTO {
     private Integer questionType;
     private Integer numericAnswer;
     private String textAnswer;
+    private Integer riskScore;
+    private String riskLevel;
 }

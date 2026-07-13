@@ -5,7 +5,7 @@ export const navItems = [
   { key: 'knowledge', label: '知识库管理', href: '/admin/knowledge', icon: DatabaseIcon },
   { key: 'survey', label: '问卷调查', href: '/admin/survey', icon: FileIcon },
   { key: 'dashboard', label: '数据统计', href: '/admin/dashboard', icon: ChartIcon },
-  { key: 'academic', label: '学业帮扶', href: '/admin/academic', icon: CapIcon }
+  { key: 'academic', label: '学业帮扶', href: '/admin/academic', icon: CapIcon },
 ]
 
 export function AdminSidebar(props) {
@@ -147,4 +147,8 @@ export function AlertIcon() {
 
 export function CheckIcon() {
   return svg([{ d: 'M20 6L9 17l-5-5' }])
+}
+
+export function ClockIcon() {
+  return svg([{ d: 'M12 7v5l3 2' }, { d: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' }])
 }

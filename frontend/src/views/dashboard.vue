@@ -3,147 +3,154 @@
     <AdminSidebar active="dashboard" />
 
     <main class="admin-main">
-      <header class="dashboard-head">
-        <h2>数据统计看板</h2>
-        <div class="toolbar">
-          <select v-model.number="days" class="select narrow" @change="loadData">
-            <option :value="7">最近 7 天</option>
-            <option :value="14">最近 14 天</option>
-            <option :value="30">最近 30 天</option>
-          </select>
-          <button class="btn ghost" :disabled="loading" @click="rebuild">
-            <RefreshIcon />
-            重建统计
-          </button>
-        </div>
-      </header>
+      <AdminTopbar title="数据统计" />
 
-      <section class="stats-grid">
-        <div v-for="card in statCards" :key="card.label" class="admin-card metric-card">
-          <div class="metric-label">
-            <span :style="{ background: card.color }"></span>
-            {{ card.label }}
+      <div class="admin-content dashboard-content">
+        <section class="dashboard-controls admin-card">
+          <div>
+            <h3>数据统计看板</h3>
+            <p>查看问答命中、热门问题与未识别问题处理情况</p>
           </div>
-          <strong :style="{ color: card.color }">{{ card.value }}</strong>
-          <p>近 {{ days }} 天</p>
-        </div>
-      </section>
-
-      <section class="dashboard-grid">
-        <div class="admin-card">
-          <h3 class="section-title">常见问题 Top 5</h3>
-          <div v-for="(item, index) in hotQuestions.slice(0, 5)" :key="item.name" class="hot-row">
-            <div>
-              <b>#{{ index + 1 }}</b>
-              <span>{{ item.name }}</span>
-              <em>{{ item.value || 0 }}</em>
-            </div>
-            <div class="bar">
-              <i :style="{ width: barWidth(item.value) }"></i>
-            </div>
-          </div>
-          <div v-if="hotQuestions.length === 0" class="empty">暂无常见问题数据</div>
-        </div>
-
-        <div class="admin-card">
-          <h3 class="section-title">
-            <AlertIcon />
-            Top 未识别问题
-          </h3>
-          <div v-for="item in topUnrecognized.slice(0, 3)" :key="item.questionText" class="unknown-card">
-            <div>
-              <strong>{{ item.questionText }}</strong>
-              <span>出现 {{ item.frequency || 0 }} 次</span>
-            </div>
-            <button class="btn text" @click="markHandled(item)">
-              <CheckIcon />
-              处理
-            </button>
-          </div>
-          <div v-if="topUnrecognized.length === 0" class="empty">暂无待处理问题</div>
-        </div>
-      </section>
-
-      <section class="admin-card hot-config-card">
-        <div class="panel-head">
-          <h3 class="section-title">首页热门问题配置</h3>
           <div class="toolbar">
-            <button class="btn gold" @click="openHotPicker">
-              <PlusIcon />
-              新增
-            </button>
-            <button class="btn text" @click="loadHotConfigs">
+            <select v-model.number="days" class="select narrow" @change="loadData">
+              <option :value="7">最近 7 天</option>
+              <option :value="14">最近 14 天</option>
+              <option :value="30">最近 30 天</option>
+            </select>
+            <button class="btn ghost" :disabled="loading" @click="rebuild">
               <RefreshIcon />
-              刷新
+              重建统计
             </button>
           </div>
-        </div>
-        <div class="hot-config-list">
-          <div v-for="item in hotConfigs" :key="item.id" class="hot-config-row">
-            <div>
-              <strong>{{ item.questionText }}</strong>
-              <span>{{ item.moduleType || '未分类' }} · 截止 {{ formatDateTime(item.validUntil) }}</span>
-            </div>
-            <button class="btn text danger" @click="deleteHotConfig(item)">删除</button>
-          </div>
-          <div v-if="hotConfigs.length === 0" class="empty">暂无手选热门问题配置</div>
-        </div>
-      </section>
+        </section>
 
-      <section class="admin-card">
-        <div class="panel-head">
-          <h3 class="section-title">未识别问题列表</h3>
-          <div class="toolbar">
-            <button class="btn text" :disabled="selectedUnrecognizedIds.length === 0 || batchHandling" @click="batchMarkHandled">
-              <CheckIcon />
-              {{ batchHandling ? '处理中...' : '批量已处理' }}
-            </button>
-            <button class="btn text" :disabled="exportingUnrecognized || unrecognized.length === 0" @click="exportUnrecognized">
-              {{ exportingUnrecognized ? '导出中...' : '导出 Excel' }}
-            </button>
-            <button class="btn text" @click="loadData">
-              <RefreshIcon />
-              刷新
-            </button>
+        <section class="stats-grid">
+          <div v-for="card in statCards" :key="card.label" class="admin-card metric-card">
+            <div class="metric-label">
+              <span :style="{ background: card.color }"></span>
+              {{ card.label }}
+            </div>
+            <strong :style="{ color: card.color }">{{ card.value }}</strong>
+            <p>近 {{ days }} 天</p>
           </div>
-        </div>
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  :checked="allUnrecognizedSelected"
-                  :disabled="unrecognized.length === 0"
-                  @change="toggleAllUnrecognized"
-                />
-              </th>
-              <th>问题</th>
-              <th>模块</th>
-              <th>频率</th>
-              <th>状态</th>
-              <th>时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in unrecognized" :key="item.id">
-              <td>
-                <input type="checkbox" :checked="isUnrecognizedSelected(item.id)" @change="toggleUnrecognized(item.id)" />
-              </td>
-              <td>{{ item.questionText }}</td>
-              <td>{{ item.moduleType || '-' }}</td>
-              <td>{{ item.frequency || 1 }}</td>
-              <td><span :class="['tag', item.status === 1 ? 'green' : 'yellow']">{{ item.status === 1 ? '已处理' : '未处理' }}</span></td>
-              <td>{{ formatDate(item.createTime) }}</td>
-              <td>
-                <button v-if="item.status !== 1" class="btn text" @click="markHandled(item)">标记已处理</button>
-                <span v-else>—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="admin-card">
+            <h3 class="section-title">常见问题 Top 5</h3>
+            <div v-for="(item, index) in hotQuestions.slice(0, 5)" :key="item.name" class="hot-row">
+              <div>
+                <b>#{{ index + 1 }}</b>
+                <span>{{ item.name }}</span>
+                <em>{{ item.value || 0 }}</em>
+              </div>
+              <div class="bar">
+                <i :style="{ width: barWidth(item.value) }"></i>
+              </div>
+            </div>
+            <div v-if="hotQuestions.length === 0" class="empty">暂无常见问题数据</div>
+          </div>
+
+          <div class="admin-card">
+            <h3 class="section-title">
+              <AlertIcon />
+              Top 未识别问题
+            </h3>
+            <div v-for="item in topUnrecognized.slice(0, 3)" :key="item.questionText" class="unknown-card">
+              <div>
+                <strong>{{ item.questionText }}</strong>
+                <span>出现 {{ item.frequency || 0 }} 次</span>
+              </div>
+              <button class="btn text" @click="markHandled(item)">
+                <CheckIcon />
+                处理
+              </button>
+            </div>
+            <div v-if="topUnrecognized.length === 0" class="empty">暂无待处理问题</div>
+          </div>
+        </section>
+
+        <section class="admin-card hot-config-card">
+          <div class="panel-head">
+            <h3 class="section-title">首页热门问题配置</h3>
+            <div class="toolbar">
+              <button class="btn gold" @click="openHotPicker">
+                <PlusIcon />
+                新增
+              </button>
+              <button class="btn text" @click="loadHotConfigs">
+                <RefreshIcon />
+                刷新
+              </button>
+            </div>
+          </div>
+          <div class="hot-config-list">
+            <div v-for="item in hotConfigs" :key="item.id" class="hot-config-row">
+              <div>
+                <strong>{{ item.questionText }}</strong>
+                <span>{{ item.moduleType || '未分类' }} · 截止 {{ formatDateTime(item.validUntil) }}</span>
+              </div>
+              <button class="btn text danger" @click="deleteHotConfig(item)">删除</button>
+            </div>
+            <div v-if="hotConfigs.length === 0" class="empty">暂无手选热门问题配置</div>
+          </div>
+        </section>
+
+        <section class="admin-card">
+          <div class="panel-head">
+            <h3 class="section-title">未识别问题列表</h3>
+            <div class="toolbar">
+              <button class="btn text" :disabled="selectedUnrecognizedIds.length === 0 || batchHandling" @click="batchMarkHandled">
+                <CheckIcon />
+                {{ batchHandling ? '处理中...' : '批量已处理' }}
+              </button>
+              <button class="btn text" :disabled="exportingUnrecognized || unrecognized.length === 0" @click="exportUnrecognized">
+                {{ exportingUnrecognized ? '导出中...' : '导出 Excel' }}
+              </button>
+              <button class="btn text" @click="loadData">
+                <RefreshIcon />
+                刷新
+              </button>
+            </div>
+          </div>
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    :checked="allUnrecognizedSelected"
+                    :disabled="unrecognized.length === 0"
+                    @change="toggleAllUnrecognized"
+                  />
+                </th>
+                <th>问题</th>
+                <th>模块</th>
+                <th>频率</th>
+                <th>状态</th>
+                <th>时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in unrecognized" :key="item.id">
+                <td>
+                  <input type="checkbox" :checked="isUnrecognizedSelected(item.id)" @change="toggleUnrecognized(item.id)" />
+                </td>
+                <td>{{ item.questionText }}</td>
+                <td>{{ item.moduleType || '-' }}</td>
+                <td>{{ item.frequency || 1 }}</td>
+                <td><span :class="['tag', item.status === 1 ? 'green' : 'yellow']">{{ item.status === 1 ? '已处理' : '未处理' }}</span></td>
+                <td>{{ formatDate(item.createTime) }}</td>
+                <td>
+                  <button v-if="item.status !== 1" class="btn text" @click="markHandled(item)">标记已处理</button>
+                  <span v-else>—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
     </main>
 
     <div v-if="hotPickerOpen" class="modal-mask" @click.self="closeHotPicker">
@@ -174,7 +181,12 @@
         </label>
         <div class="hot-picker-list">
           <label v-for="entry in kbEntries" :key="entry.id" :class="['hot-picker-row', { selected: selectedKbEntryIds.includes(entry.id) }]">
-            <input type="checkbox" :checked="selectedKbEntryIds.includes(entry.id)" @change="toggleKbEntry(entry.id)" />
+            <input
+              type="checkbox"
+              :checked="selectedKbEntryIds.includes(entry.id)"
+              :disabled="isKbEntryDisabled(entry.id)"
+              @change="toggleKbEntry(entry.id)"
+            />
             <div>
               <strong>{{ entry.question }}</strong>
               <p>{{ entry.answer }}</p>
@@ -184,9 +196,12 @@
           <div v-if="!hotPickerLoading && kbEntries.length === 0" class="empty slim">暂无匹配知识库问题</div>
         </div>
         <div class="modal-actions">
-          <span>已选 {{ selectedKbEntryIds.length }} 条</span>
+          <span :class="['selection-count', { valid: hotPickerSelectionValid }]">
+            已选 {{ selectedKbEntryIds.length }} / 5 条
+            <em>{{ hotPickerSelectionTip }}</em>
+          </span>
           <button class="btn ghost" type="button" @click="closeHotPicker">取消</button>
-          <button class="btn primary" :disabled="savingHotConfig || selectedKbEntryIds.length === 0" @click="saveSelectedHotConfigs">
+          <button class="btn primary" :disabled="savingHotConfig || !hotPickerSelectionValid" @click="saveSelectedHotConfigs">
             {{ savingHotConfig ? '保存中...' : '加入热门问题' }}
           </button>
         </div>
@@ -199,7 +214,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { apiDelete, apiDownload, apiForm, apiGet, apiJson } from '../js/adminApi'
 import '../css/admin.css'
-import { AdminSidebar, AlertIcon, CheckIcon, PlusIcon, RefreshIcon } from './shared/adminParts'
+import { AdminSidebar, AdminTopbar, AlertIcon, CheckIcon, PlusIcon, RefreshIcon } from './shared/adminParts'
 
 const days = ref(7)
 const loading = ref(false)
@@ -219,6 +234,7 @@ const kbEntries = ref([])
 const selectedKbEntryIds = ref([])
 const hotConfigValidUntil = ref('')
 const modules = ['考务通知', '教学运行', '学业帮扶', '心理辅导']
+const REQUIRED_HOT_CONFIG_COUNT = 5
 
 const topUnrecognized = computed(() => overview.value.topUnrecognized || [])
 const visibleUnrecognizedIds = computed(() => unrecognized.value.map(item => item.id).filter(Boolean))
@@ -232,6 +248,13 @@ const statCards = computed(() => [
   { label: '未命中', value: overview.value.noHitCount || 0, color: '#ef476f' },
   { label: '未识别待处理', value: overview.value.unrecognizedPending || 0, color: '#ffc743' }
 ])
+const hotPickerSelectionValid = computed(() => selectedKbEntryIds.value.length === REQUIRED_HOT_CONFIG_COUNT)
+const hotPickerSelectionTip = computed(() => {
+  const count = selectedKbEntryIds.value.length
+  if (count === REQUIRED_HOT_CONFIG_COUNT) return '数量正确，可以保存'
+  if (count < REQUIRED_HOT_CONFIG_COUNT) return `还需选择 ${REQUIRED_HOT_CONFIG_COUNT - count} 条`
+  return `已超出 ${count - REQUIRED_HOT_CONFIG_COUNT} 条`
+})
 
 async function loadData() {
   loading.value = true
@@ -316,14 +339,27 @@ async function searchKbEntries() {
 
 function toggleKbEntry(id) {
   if (!id) return
-  selectedKbEntryIds.value = selectedKbEntryIds.value.includes(id)
-    ? selectedKbEntryIds.value.filter(selectedId => selectedId !== id)
-    : [...selectedKbEntryIds.value, id]
+  if (selectedKbEntryIds.value.includes(id)) {
+    selectedKbEntryIds.value = selectedKbEntryIds.value.filter(selectedId => selectedId !== id)
+    return
+  }
+  if (selectedKbEntryIds.value.length >= REQUIRED_HOT_CONFIG_COUNT) {
+    return
+  }
+  selectedKbEntryIds.value = [...selectedKbEntryIds.value, id]
+}
+
+function isKbEntryDisabled(id) {
+  return selectedKbEntryIds.value.length >= REQUIRED_HOT_CONFIG_COUNT
+    && !selectedKbEntryIds.value.includes(id)
 }
 
 async function saveSelectedHotConfigs() {
+  if (!hotPickerSelectionValid.value) {
+    return
+  }
   const selectedEntries = kbEntries.value.filter(entry => selectedKbEntryIds.value.includes(entry.id))
-  if (!selectedEntries.length) return
+  if (selectedEntries.length !== REQUIRED_HOT_CONFIG_COUNT) return
   savingHotConfig.value = true
   try {
     await Promise.all(selectedEntries.map((entry, index) => apiJson('/api/stat/hot-question-configs', {
@@ -400,17 +436,28 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.dashboard-head {
-  min-height: 68px;
+.dashboard-content {
+  align-content: start;
+}
+
+.dashboard-controls {
+  min-height: 88px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 18px;
 }
 
-.dashboard-head h2 {
+.dashboard-controls h3 {
   margin: 0;
-  font-size: 25px;
+  font-size: 22px;
   color: #082f7a;
+}
+
+.dashboard-controls p {
+  margin: 6px 0 0;
+  color: #6e82b1;
+  font-weight: 800;
 }
 
 .narrow {
@@ -627,6 +674,10 @@ onMounted(loadData)
   border-color: #3182ce;
   background: #ebf8ff;
 }
+.hot-picker-row:has(input:disabled):not(.selected) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
 .hot-picker-row strong,
 .hot-picker-row span {
   display: block;
@@ -652,6 +703,21 @@ onMounted(loadData)
   margin-right: auto;
   color: #49659c;
   font-weight: 900;
+}
+.modal-actions .selection-count {
+  display: grid;
+  gap: 4px;
+}
+.selection-count em {
+  color: #d93c58;
+  font-size: 13px;
+  font-style: normal;
+}
+.selection-count.valid {
+  color: #159461;
+}
+.selection-count.valid em {
+  color: #159461;
 }
 
 @media (max-width: 1200px) {

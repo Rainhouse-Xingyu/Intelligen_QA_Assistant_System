@@ -4,7 +4,7 @@
       <button class="back-btn" @click="$emit('go-home')">返回首页</button>
       <div>
         <h1>问卷调查</h1>
-        <p>这里只显示当前需要填写的问卷，提交后将不再出现在待填写列表中</p>
+        <p>已发布问卷会提前显示，未到开始时间时只能查看，不能作答</p>
       </div>
       <button class="refresh-btn" :disabled="loading" @click="reloadAll">刷新</button>
     </header>
@@ -25,7 +25,9 @@
             <strong>{{ item.survey.title }}</strong>
             <span>{{ formatTime(item.survey.startTime || item.survey.publishedAt || item.survey.createdAt) }}</span>
           </div>
-          <em>待填写</em>
+          <em :class="{ upcoming: !isSurveyOpen(item.survey) }">
+            {{ isSurveyOpen(item.survey) ? '待填写' : '未开始' }}
+          </em>
         </article>
         <div v-if="surveys.length === 0" class="empty-state">暂无待填写问卷</div>
       </aside>
@@ -39,29 +41,50 @@
               <p>{{ current.survey.purpose || current.survey.description || '请根据实际情况完成问卷。' }}</p>
               <small>
                 结束时间：{{ formatTime(current.survey.endTime) }}
+                <span v-if="current.survey.startTime"> · 开始时间：{{ formatTime(current.survey.startTime) }}</span>
                 <span v-if="current.survey.scopeText"> · 范围：{{ current.survey.scopeText }}</span>
               </small>
             </div>
-            <span class="status-pill todo">未提交</span>
+            <span :class="['status-pill', isCurrentOpen ? 'todo' : 'upcoming']">
+              {{ isCurrentOpen ? '未提交' : '未开始' }}
+            </span>
+          </div>
+
+          <div v-if="!isCurrentOpen" class="locked-notice">
+            这份问卷将在 {{ formatTime(current.survey.startTime) }} 开始，现在可以提前查看题目，到时间后才能选择答案并提交。
           </div>
 
           <form class="question-list" @submit.prevent="submitSurvey">
-            <article v-for="question in current.questions" :key="question.id" class="question-item">
+            <article
+              v-for="question in current.questions"
+              :id="`question-${question.id}`"
+              :key="question.id"
+              :class="['question-item', { locked: !isCurrentOpen, missing: missingQuestionId === question.id }]"
+            >
               <div class="question-title">
                 <b>{{ question.questionNo }}</b>
                 <span>{{ question.questionText }}</span>
                 <em>{{ question.required === 1 ? '必填' : '选填' }}</em>
               </div>
+              <div v-if="missingQuestionId === question.id" class="question-missing-tip">
+                第 {{ question.questionNo }} 题未作答
+              </div>
 
               <div v-if="question.questionType === 1" class="scale-options">
-                <label v-for="option in getQuestionOptions(question)" :key="option.value" :class="{ selected: answers[question.id] === option.value }">
+                <label
+                  v-for="option in getQuestionOptions(question)"
+                  :key="option.value"
+                  :class="{ selected: answers[question.id] === option.value }"
+                >
                   <input
                     v-model.number="answers[question.id]"
                     type="radio"
                     :name="`q-${question.id}`"
                     :value="option.value"
+                    :disabled="!isCurrentOpen"
+                    @change="clearMissing(question.id)"
                   />
-                  <strong>{{ option.value }}</strong>
+                  <strong class="option-dot"></strong>
                   <span>{{ option.label }}</span>
                 </label>
               </div>
@@ -71,6 +94,8 @@
                 v-model="textAnswers[question.id]"
                 class="text-answer"
                 placeholder="可以写下你的想法，也可以留空"
+                :disabled="!isCurrentOpen"
+                @input="clearMissing(question.id)"
               ></textarea>
             </article>
 
@@ -78,8 +103,8 @@
 
             <div class="submit-row">
               <span>{{ current.questions.length }} 道题</span>
-              <button class="submit-btn" type="submit" :disabled="submitting">
-                {{ submitting ? '提交中...' : '提交问卷' }}
+              <button class="submit-btn" type="submit" :disabled="submitting || !isCurrentOpen">
+                {{ !isCurrentOpen ? '未到开始时间' : submitting ? '提交中...' : '提交问卷' }}
               </button>
             </div>
           </form>
@@ -91,7 +116,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { apiGet, apiJson } from '../js/adminApi'
 
 const emit = defineEmits(['go-home', 'navigate-login'])
@@ -117,10 +142,20 @@ const selectedId = ref(null)
 const loading = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
+const missingQuestionId = ref(null)
 const answers = reactive({})
 const textAnswers = reactive({})
 
 const current = computed(() => surveys.value.find(item => item.survey.id === selectedId.value) || null)
+const now = ref(Date.now())
+const isCurrentOpen = computed(() => current.value ? isSurveyOpen(current.value.survey) : false)
+
+function isSurveyOpen(survey) {
+  if (!survey) return false
+  const start = survey.startTime ? new Date(survey.startTime).getTime() : null
+  const end = survey.endTime ? new Date(survey.endTime).getTime() : null
+  return (!start || start <= now.value) && (!end || end >= now.value)
+}
 
 function getQuestionOptions(question) {
   const text = question?.questionText || ''
@@ -157,6 +192,7 @@ async function loadSurveys() {
 function selectSurvey(id) {
   selectedId.value = id
   errorMessage.value = ''
+  missingQuestionId.value = null
   clearAnswers()
 }
 
@@ -168,9 +204,16 @@ function clearAnswers() {
 async function submitSurvey() {
   if (!current.value) return
   errorMessage.value = ''
-  const missing = current.value.questions.find(question => question.questionType === 1 && !answers[question.id])
+  missingQuestionId.value = null
+  if (!isCurrentOpen.value) {
+    errorMessage.value = `问卷还未开始，请在 ${formatTime(current.value.survey.startTime)} 后再填写`
+    return
+  }
+  const missing = current.value.questions.find(isQuestionMissing)
   if (missing) {
-    errorMessage.value = `第 ${missing.questionNo} 题还没有选择`
+    missingQuestionId.value = missing.id
+    errorMessage.value = `第 ${missing.questionNo} 题未作答`
+    scrollToQuestion(missing.id)
     return
   }
 
@@ -193,12 +236,48 @@ async function submitSurvey() {
   }
 }
 
+function isQuestionMissing(question) {
+  if (question.questionType === 1) {
+    return !answers[question.id]
+  }
+  return question.required === 1 && !(textAnswers[question.id] || '').trim()
+}
+
+function clearMissing(questionId) {
+  if (missingQuestionId.value !== questionId) return
+  const question = current.value?.questions.find(item => item.id === questionId)
+  if (question && !isQuestionMissing(question)) {
+    missingQuestionId.value = null
+    errorMessage.value = ''
+  }
+}
+
+function scrollToQuestion(questionId) {
+  requestAnimationFrame(() => {
+    const target = document.getElementById(`question-${questionId}`)
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
 function formatTime(value) {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
-onMounted(reloadAll)
+let timer = null
+
+onMounted(() => {
+  reloadAll()
+  timer = window.setInterval(() => {
+    now.value = Date.now()
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (timer) {
+    window.clearInterval(timer)
+  }
+})
 </script>
 
 <style scoped>
@@ -345,6 +424,11 @@ onMounted(reloadAll)
   font-weight: 900;
 }
 
+.survey-card em.upcoming {
+  color: #315dbc;
+  background: #eaf2ff;
+}
+
 .answer-panel {
   min-height: calc(100vh - 132px);
   padding: 28px;
@@ -391,6 +475,24 @@ onMounted(reloadAll)
   background: #fff3c4;
 }
 
+.status-pill.upcoming {
+  color: #315dbc;
+  background: #eaf2ff;
+}
+
+.locked-notice {
+  min-height: 48px;
+  border: 1px solid #bdd6ff;
+  border-radius: 8px;
+  background: #f1f6ff;
+  color: #315dbc;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  margin-bottom: 18px;
+  font-weight: 900;
+}
+
 .question-list {
   display: grid;
   gap: 16px;
@@ -401,6 +503,16 @@ onMounted(reloadAll)
   border-radius: 8px;
   background: #fff;
   padding: 18px;
+}
+
+.question-item.locked {
+  background: #f8fbff;
+}
+
+.question-item.missing {
+  border-color: #f0446b;
+  background: #fff8fa;
+  box-shadow: 0 10px 24px rgba(240, 68, 107, 0.12);
 }
 
 .question-title {
@@ -427,6 +539,19 @@ onMounted(reloadAll)
   font-style: normal;
 }
 
+.question-missing-tip {
+  min-height: 36px;
+  border: 1px solid #ffd0dc;
+  border-radius: 8px;
+  background: #ffe9ee;
+  color: #d93c58;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  margin-top: 12px;
+  font-weight: 900;
+}
+
 .scale-options {
   display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
@@ -449,6 +574,12 @@ onMounted(reloadAll)
   font-weight: 900;
 }
 
+.scale-options label:has(input:disabled),
+.text-answer:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .scale-options label.selected {
   border-color: #315dbc;
   background: #eaf2ff;
@@ -461,7 +592,16 @@ onMounted(reloadAll)
 }
 
 .scale-options strong {
-  font-size: 22px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #315dbc;
+  background: #fff;
+}
+
+.scale-options label.selected strong {
+  background: #315dbc;
+  box-shadow: inset 0 0 0 3px #fff;
 }
 
 .scale-options span {

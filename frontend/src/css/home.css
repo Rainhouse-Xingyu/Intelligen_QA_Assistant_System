@@ -67,6 +67,62 @@
   top: 8px;
   right: 12px;
 }
+.conversation-row {
+  min-height: 52px;
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 6px;
+  color: #173875;
+}
+.conversation-row:hover {
+  background: #eaf2ff;
+  box-shadow: 0 4px 12px rgba(36, 67, 115, 0.1);
+}
+.admin-nav .conversation-link {
+  min-width: 0;
+  height: 52px;
+  padding-right: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+.admin-nav .conversation-link:hover {
+  background: transparent;
+  box-shadow: none;
+}
+.conversation-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-delete {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #6e82b1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s, color 0.2s;
+}
+.conversation-row:hover .conversation-delete,
+.conversation-delete:focus-visible {
+  opacity: 1;
+}
+.conversation-delete:hover {
+  background: #ffe9ee;
+  color: #d92d54;
+}
+.conversation-delete .icon {
+  width: 18px;
+  height: 18px;
+}
 .arrow {
   display: inline-block;
   transform: rotate(180deg);

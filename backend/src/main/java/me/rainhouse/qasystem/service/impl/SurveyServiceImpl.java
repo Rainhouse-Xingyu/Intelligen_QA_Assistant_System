@@ -290,7 +290,6 @@ public class SurveyServiceImpl implements SurveyService {
         LocalDateTime now = LocalDateTime.now();
         return surveyMapper.selectList(new LambdaQueryWrapper<Survey>()
                         .eq(Survey::getStatus, 1)
-                        .and(wrapper -> wrapper.isNull(Survey::getStartTime).or().le(Survey::getStartTime, now))
                         .and(wrapper -> wrapper.isNull(Survey::getEndTime).or().ge(Survey::getEndTime, now))
                         .orderByDesc(Survey::getPublishedAt)
                         .orderByDesc(Survey::getCreatedAt))
@@ -403,12 +402,14 @@ public class SurveyServiceImpl implements SurveyService {
             header.createCell(1).setCellValue("账号/学号");
             header.createCell(2).setCellValue("提交时间");
             for (int i = 0; i < questions.size(); i++) {
-                header.createCell(i + 3).setCellValue(questions.get(i).getQuestionText());
+                int column = i * 2 + 3;
+                header.createCell(column).setCellValue(questions.get(i).getQuestionText());
+                header.createCell(column + 1).setCellValue("风险分");
             }
 
             Map<Long, Integer> questionColumnMap = new HashMap<>();
             for (int i = 0; i < questions.size(); i++) {
-                questionColumnMap.put(questions.get(i).getId(), i + 3);
+                questionColumnMap.put(questions.get(i).getId(), i * 2 + 3);
             }
 
             for (int rowIndex = 0; rowIndex < submissions.size(); rowIndex++) {
@@ -424,11 +425,12 @@ public class SurveyServiceImpl implements SurveyService {
                     Integer column = questionColumnMap.get(answer.getQuestionId());
                     if (column != null) {
                         row.createCell(column).setCellValue(exportAnswerValue(answer));
+                        row.createCell(column + 1).setCellValue(answer.getRiskScore() == null ? "" : String.valueOf(answer.getRiskScore()));
                     }
                 }
             }
 
-            for (int i = 0; i < Math.min(questions.size() + 3, 40); i++) {
+            for (int i = 0; i < Math.min(questions.size() * 2 + 3, 60); i++) {
                 sheet.autoSizeColumn(i);
             }
             workbook.write(outputStream);
@@ -724,6 +726,9 @@ public class SurveyServiceImpl implements SurveyService {
             dto.setQuestionText(question.getQuestionText());
             dto.setQuestionType(question.getQuestionType());
         }
+        int riskScore = calculateRiskScore(answer, dto.getQuestionText(), dto.getIndicatorName());
+        dto.setRiskScore(riskScore);
+        dto.setRiskLevel(formatRiskLevel(riskScore));
         return dto;
     }
 
@@ -745,16 +750,76 @@ public class SurveyServiceImpl implements SurveyService {
 
     private String exportAnswerValue(SurveySubmissionAnswerDTO answer) {
         if (answer.getNumericAnswer() != null) {
+            String questionText = answer.getQuestionText() == null ? "" : answer.getQuestionText();
+            if (questionText.contains("帮扶频率")) {
+                return switch (answer.getNumericAnswer()) {
+                    case 1 -> "每月1次";
+                    case 2 -> "每两周1次";
+                    case 3 -> "每周1次";
+                    case 4 -> "每周2次";
+                    case 5 -> "不需要帮扶";
+                    default -> String.valueOf(answer.getNumericAnswer());
+                };
+            }
             return switch (answer.getNumericAnswer()) {
-                case 1 -> "1 完全符合";
-                case 2 -> "2 比较符合";
-                case 3 -> "3 一般符合";
-                case 4 -> "4 比较不符合";
-                case 5 -> "5 不符合";
+                case 1 -> "完全符合";
+                case 2 -> "比较符合";
+                case 3 -> "一般符合";
+                case 4 -> "比较不符合";
+                case 5 -> "不符合";
                 default -> String.valueOf(answer.getNumericAnswer());
             };
         }
         return StringUtils.hasText(answer.getTextAnswer()) ? answer.getTextAnswer() : "";
+    }
+
+    private int calculateRiskScore(SurveyAnswer answer, String questionText, String indicator) {
+        if (answer.getNumericAnswer() != null) {
+            int value = Math.max(1, Math.min(5, answer.getNumericAnswer()));
+            String text = ((indicator == null ? "" : indicator) + " " + (questionText == null ? "" : questionText)).toLowerCase();
+            if (text.contains("帮扶频率")) {
+                return value == 5 ? 1 : Math.min(5, value + 1);
+            }
+            return isNegativeQuestion(text) ? 6 - value : value;
+        }
+        String textAnswer = answer.getTextAnswer();
+        if (!StringUtils.hasText(textAnswer)) {
+            return 1;
+        }
+        if (containsAny(textAnswer, "自杀", "伤害自己", "活不下去", "崩溃", "退学", "长期失眠", "严重焦虑")) {
+            return 5;
+        }
+        if (containsAny(textAnswer, "不会", "困难", "压力", "焦虑", "拖延", "挂科", "不懂", "跟不上", "作业", "考试")) {
+            return 4;
+        }
+        return 2;
+    }
+
+    private String formatRiskLevel(int riskScore) {
+        if (riskScore >= 5) return "高风险";
+        if (riskScore >= 4) return "明显风险";
+        if (riskScore >= 3) return "轻度关注";
+        return "基本稳定";
+    }
+
+    private boolean isNegativeQuestion(String text) {
+        return containsAny(text,
+                "焦虑", "压力", "担心", "害怕", "困难", "不懂", "不会", "拖延", "缺交", "未完成",
+                "挂科", "旷课", "缺勤", "失眠", "低落", "迷茫", "退学", "放弃", "跟不上", "冲突",
+                "很少", "缺乏", "无法", "难以");
+    }
+
+    private boolean containsAny(String value, String... keywords) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String lower = value.toLowerCase();
+        for (String keyword : keywords) {
+            if (lower.contains(keyword.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private record QuestionDraft(String questionCode, String indicatorName, String questionText, Integer questionType, Integer required) {

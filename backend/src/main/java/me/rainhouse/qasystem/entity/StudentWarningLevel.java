@@ -16,5 +16,11 @@ public class StudentWarningLevel {
     private String className;
     private String studentName;
     private String warningLevel;
+    private String warningReason;
+    private String weaknessItems;
+    private String helpMeasures;
+    private String counselor;
+    private String contactPhone;
+    private String remark;
     private LocalDateTime createdAt;
 }
