@@ -45,6 +45,13 @@ class QueryRewriteServiceImplTest {
     }
 
     @Test
+    void repeatedGreetingDoesNotBecomeEmptyRetrievalQuery() {
+        QueryRewriteServiceImpl service = new QueryRewriteServiceImpl(new AiModelProperties(), new DisabledLocalModelClient());
+
+        assertEquals("你好你好。", service.rewrite("你好你好。"));
+    }
+
+    @Test
     void rejectsLocalModelRewriteWhenTopicDrifts() {
         QueryRewriteServiceImpl service = new QueryRewriteServiceImpl(
                 new AiModelProperties(),

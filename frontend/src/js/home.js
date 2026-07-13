@@ -1,5 +1,5 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { apiGet, apiForm } from './adminApi'
+import { apiGet, apiForm, apiUpload } from './adminApi'
 
 const HISTORY_RETENTION_DAYS = 30
 const HISTORY_RETENTION_MS = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000
@@ -41,6 +41,9 @@ export default {
   emits: ['start-chat', 'navigate-login', 'navigate-survey'],
   setup(props, { emit }) {
     const question = ref('')
+    const isRecording = ref(false)
+    const isVoiceProcessing = ref(false)
+    const voiceStatus = ref('')
     const selectedCategory = ref(null)
     const shakeAlert = ref(false)
     const logoRef = ref(null)
@@ -64,6 +67,11 @@ export default {
     })
     let hotBubbleTimer = 0
     let dragOffset = { x: 0, y: 0 }
+    let mediaRecorder = null
+    let wavRecorder = null
+    let recordingStream = null
+    let recordingChunks = []
+    let voiceStatusTimer = 0
     const categories = [
       { label: '考务', value: '考务通知' },
       { label: '教学', value: '教学运行' },
@@ -458,17 +466,105 @@ export default {
       window.removeEventListener('touchend', stopMascotDrag)
     }
 
-    const handleSendFromHome = (directItem = null) => {
-      if (!question.value.trim()) return
-      const trimmedQuestion = question.value.trim()
-      const directAnswer = directItem?.answerText?.trim()
-      const initialMessages = directAnswer
-        ? [
-            { type: 'user', content: trimmedQuestion },
-            { type: 'bot', content: directAnswer, durationMs: 0, answerSource: 'COMMON_DIRECT' }
-          ]
-        : []
+    const setVoiceStatus = (status, clearAfter = 0) => {
+      window.clearTimeout(voiceStatusTimer)
+      voiceStatus.value = status
+      if (clearAfter > 0) {
+        voiceStatusTimer = window.setTimeout(() => {
+          voiceStatus.value = ''
+        }, clearAfter)
+      }
+    }
 
+    const stopRecordingStream = () => {
+      if (recordingStream) {
+        recordingStream.getTracks().forEach(track => track.stop())
+        recordingStream = null
+      }
+    }
+
+    const pickRecordingMimeType = () => {
+      if (!window.MediaRecorder?.isTypeSupported) return ''
+      const candidates = [
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+        'audio/webm;codecs=opus',
+        'audio/webm'
+      ]
+      return candidates.find(type => MediaRecorder.isTypeSupported(type)) || ''
+    }
+
+    const audioFileExtension = (mimeType = '') => {
+      if (mimeType.includes('ogg')) return 'ogg'
+      if (mimeType.includes('mp4')) return 'm4a'
+      if (mimeType.includes('webm')) return 'webm'
+      return 'webm'
+    }
+
+    const writeString = (view, offset, text) => {
+      for (let i = 0; i < text.length; i += 1) {
+        view.setUint8(offset + i, text.charCodeAt(i))
+      }
+    }
+
+    const encodeWav = (buffers, sampleRate) => {
+      const sampleCount = buffers.reduce((sum, buffer) => sum + buffer.length, 0)
+      const wavBuffer = new ArrayBuffer(44 + sampleCount * 2)
+      const view = new DataView(wavBuffer)
+      writeString(view, 0, 'RIFF')
+      view.setUint32(4, 36 + sampleCount * 2, true)
+      writeString(view, 8, 'WAVE')
+      writeString(view, 12, 'fmt ')
+      view.setUint32(16, 16, true)
+      view.setUint16(20, 1, true)
+      view.setUint16(22, 1, true)
+      view.setUint32(24, sampleRate, true)
+      view.setUint32(28, sampleRate * 2, true)
+      view.setUint16(32, 2, true)
+      view.setUint16(34, 16, true)
+      writeString(view, 36, 'data')
+      view.setUint32(40, sampleCount * 2, true)
+
+      let offset = 44
+      buffers.forEach(buffer => {
+        for (let i = 0; i < buffer.length; i += 1) {
+          const sample = Math.max(-1, Math.min(1, buffer[i]))
+          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
+          offset += 2
+        }
+      })
+      return new Blob([view], { type: 'audio/wav' })
+    }
+
+    const createWavRecorder = async (stream) => {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      if (!AudioContext) {
+        throw new Error('当前浏览器暂不支持录音功能，可以先用文字提问。')
+      }
+      const audioContext = new AudioContext()
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+      const source = audioContext.createMediaStreamSource(stream)
+      const processor = audioContext.createScriptProcessor(4096, 1, 1)
+      const buffers = []
+      processor.onaudioprocess = (event) => {
+        buffers.push(new Float32Array(event.inputBuffer.getChannelData(0)))
+      }
+      source.connect(processor)
+      processor.connect(audioContext.destination)
+      return {
+        stop: async () => {
+          processor.disconnect()
+          source.disconnect()
+          await audioContext.close()
+          return encodeWav(buffers, audioContext.sampleRate)
+        }
+      }
+    }
+
+    const openHomeChat = (questionText, initialMessages, questionToSend = '') => {
+      const trimmedQuestion = questionText.trim()
       let historyId = ''
 
       if (isLoggedIn.value) {
@@ -487,12 +583,131 @@ export default {
       }
 
       emit('start-chat', {
-        question: directAnswer ? '' : trimmedQuestion,
+        question: questionToSend,
         category: selectedCategory.value,
         historyId,
         messages: initialMessages
       })
       question.value = ''
+    }
+
+    const sendVoiceMessage = async (audioBlob, extension = 'webm') => {
+      if (!audioBlob || !audioBlob.size) {
+        isRecording.value = false
+        setVoiceStatus('没有录到声音，请重试。', 4000)
+        return
+      }
+      isVoiceProcessing.value = true
+      setVoiceStatus('正在识别语音，请稍候...')
+      try {
+        const formData = new FormData()
+        formData.append('audioFile', audioBlob, `question.${extension}`)
+        const data = await apiUpload('/api/chat/voice-detail', formData)
+        const recognizedText = data?.recognizedText || data?.originalQuestion || ''
+        if (!recognizedText.trim()) {
+          throw new Error('没有识别到有效问题，请说得更清楚一些。')
+        }
+        const initialMessages = [
+          { type: 'user', content: recognizedText, inputType: 'voice' },
+          {
+            type: 'bot',
+            content: data?.answer || '语音已识别，但暂时没有生成有效回复。',
+            durationMs: data?.responseTimeMs || 0,
+            answerSource: data?.answerSource,
+            mediaUrl: data?.mediaUrl
+          }
+        ]
+        openHomeChat(recognizedText, initialMessages)
+      } catch (e) {
+        setVoiceStatus(e.message || '语音处理失败，请稍后重试。', 5000)
+      } finally {
+        isVoiceProcessing.value = false
+      }
+    }
+
+    const toggleVoiceRecording = async () => {
+      if (isVoiceProcessing.value) return
+      if (isRecording.value) {
+        if (mediaRecorder) {
+          mediaRecorder.stop()
+          return
+        }
+        if (wavRecorder) {
+          const recorder = wavRecorder
+          wavRecorder = null
+          isRecording.value = false
+          setVoiceStatus('正在识别语音，请稍候...')
+          try {
+            const blob = await recorder.stop()
+            stopRecordingStream()
+            sendVoiceMessage(blob, 'wav')
+          } catch (e) {
+            stopRecordingStream()
+            setVoiceStatus(e.message || '录音保存失败，请重试。', 5000)
+          }
+        }
+        return
+      }
+      if (!navigator.mediaDevices?.getUserMedia || (!window.MediaRecorder && !(window.AudioContext || window.webkitAudioContext))) {
+        setVoiceStatus('当前浏览器不支持录音，请使用文字提问。', 5000)
+        return
+      }
+      try {
+        recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        recordingChunks = []
+        const mimeType = pickRecordingMimeType()
+        if (mimeType && !mimeType.includes('webm')) {
+          mediaRecorder = new MediaRecorder(recordingStream, { mimeType })
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) recordingChunks.push(event.data)
+          }
+          mediaRecorder.onstop = () => {
+            const recorderMimeType = mediaRecorder?.mimeType || mimeType
+            const blob = new Blob(recordingChunks, { type: recorderMimeType })
+            mediaRecorder = null
+            isRecording.value = false
+            stopRecordingStream()
+            sendVoiceMessage(blob, audioFileExtension(recorderMimeType))
+          }
+          mediaRecorder.start()
+        } else {
+          wavRecorder = await createWavRecorder(recordingStream)
+        }
+        isRecording.value = true
+        setVoiceStatus('正在录音，再次点击麦克风结束')
+      } catch (e) {
+        isRecording.value = false
+        mediaRecorder = null
+        if (wavRecorder) {
+          try {
+            await wavRecorder.stop()
+          } catch {
+            // Ignore cleanup failure.
+          }
+          wavRecorder = null
+        }
+        stopRecordingStream()
+        setVoiceStatus(e.message || '没有获取到麦克风权限，请检查浏览器权限。', 5000)
+      }
+    }
+
+    const voiceButtonTitle = computed(() => {
+      if (isVoiceProcessing.value) return '正在识别语音'
+      return isRecording.value ? '停止录音' : '语音提问'
+    })
+
+    const handleSendFromHome = (directItem = null) => {
+      if (!question.value.trim()) return
+      const trimmedQuestion = question.value.trim()
+      const directAnswer = directItem?.answerText?.trim()
+      const initialMessages = directAnswer
+        ? [
+            { type: 'user', content: trimmedQuestion },
+            { type: 'bot', content: directAnswer, durationMs: 0, answerSource: 'COMMON_DIRECT' }
+          ]
+        : []
+
+      openHomeChat(trimmedQuestion, initialMessages, directAnswer ? '' : trimmedQuestion)
     }
 
     let logoToneTimer = 0
@@ -524,11 +739,17 @@ export default {
       }
       window.clearInterval(logoToneTimer)
       window.clearTimeout(hotBubbleTimer)
+      window.clearTimeout(voiceStatusTimer)
+      stopRecordingStream()
       stopMascotDrag()
     })
 
     return {
       question,
+      isRecording,
+      isVoiceProcessing,
+      voiceStatus,
+      voiceButtonTitle,
       selectedCategory,
       shakeAlert,
       logoRef,
@@ -552,6 +773,7 @@ export default {
       hasPendingSurvey,
       conversations,
       handleSendFromHome,
+      toggleVoiceRecording,
       handleLoginClick,
       handleSurveyClick,
       toggleCategory,

@@ -2,6 +2,7 @@ package me.rainhouse.qasystem.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import me.rainhouse.qasystem.common.dto.AiChatResponse;
+import me.rainhouse.qasystem.common.utils.AnswerTextSanitizer;
 import me.rainhouse.qasystem.common.utils.CasualConversationUtils;
 import me.rainhouse.qasystem.entity.QuestionRaw;
 import me.rainhouse.qasystem.mapper.QuestionRawMapper;
@@ -110,6 +111,7 @@ public class AiChatServiceImpl implements AiChatService {
             moduleType = searchResponse.moduleType();
         }
         String answer = answerGeneratorService.generate(query, rewriteQuestion, searchResponse, memoryContext);
+        answer = AnswerTextSanitizer.stripReferenceSection(answer);
         String answerSource = "RAG";
 
         if (isEchoAnswer(query, answer)) {
@@ -127,6 +129,8 @@ public class AiChatServiceImpl implements AiChatService {
                 answerSource = "NO_ANSWER_FALLBACK";
             }
         }
+
+        answer = AnswerTextSanitizer.stripReferenceSection(answer);
 
         return AiChatResponse.builder()
                 .originalQuestion(query)

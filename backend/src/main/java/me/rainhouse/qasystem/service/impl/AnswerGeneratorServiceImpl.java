@@ -93,20 +93,6 @@ public class AnswerGeneratorServiceImpl implements AnswerGeneratorService {
         StringBuilder answer = new StringBuilder();
         answer.append(top.answer().trim());
 
-        List<VectorSearchResult> references = searchResponse.results();
-        if (!references.isEmpty()) {
-            answer.append("\n\n参考来源:");
-            for (int i = 0; i < Math.min(3, references.size()); i++) {
-                VectorSearchResult result = references.get(i);
-                answer.append("\n").append(i + 1)
-                        .append(". 知识库条目 ").append(result.knowledgeId())
-                        .append(" \"").append(result.question()).append("\"")
-                        .append("，匹配度 ").append(String.format("%.4f", result.finalScore()));
-                if (StringUtils.hasText(result.sourceUrl())) {
-                    answer.append("，来源：").append(result.sourceUrl());
-                }
-            }
-        }
         return answer.toString();
     }
 }

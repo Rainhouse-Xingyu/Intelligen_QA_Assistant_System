@@ -119,13 +119,31 @@
                   @click="toggleCategory(cat.value)"
                 >{{ cat.label }}</button>
              </div>
-             <button class="send-btn" @click="handleSendFromHome">
-                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="12" y1="19" x2="12" y2="5"></line>
-                  <polyline points="5 12 12 5 19 12"></polyline>
-                </svg>
-             </button>
+             <div class="search-actions">
+               <button
+                 class="voice-btn"
+                 :class="{ recording: isRecording, processing: isVoiceProcessing }"
+                 :disabled="isVoiceProcessing"
+                 :title="voiceButtonTitle"
+                 :aria-label="voiceButtonTitle"
+                 @click="toggleVoiceRecording"
+               >
+                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                   <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                   <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                   <path d="M12 19v3"></path>
+                   <path d="M8 22h8"></path>
+                 </svg>
+               </button>
+               <button class="send-btn" @click="handleSendFromHome">
+                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                   <line x1="12" y1="19" x2="12" y2="5"></line>
+                   <polyline points="5 12 12 5 19 12"></polyline>
+                 </svg>
+               </button>
+             </div>
            </div>
+           <p v-if="voiceStatus" class="voice-status">{{ voiceStatus }}</p>
         </div>
 
         <section class="common-question-panel">
@@ -179,13 +197,31 @@
                 @click="toggleCategory(cat.value)"
               >{{ cat.label }}</button>
            </div>
-           <button class="send-btn" @click="handleSendFromHome">
-              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="19" x2="12" y2="5"></line>
-                <polyline points="5 12 12 5 19 12"></polyline>
-              </svg>
-           </button>
+           <div class="search-actions">
+             <button
+               class="voice-btn"
+               :class="{ recording: isRecording, processing: isVoiceProcessing }"
+               :disabled="isVoiceProcessing"
+               :title="voiceButtonTitle"
+               :aria-label="voiceButtonTitle"
+               @click="toggleVoiceRecording"
+             >
+               <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                 <path d="M12 19v3"></path>
+                 <path d="M8 22h8"></path>
+               </svg>
+             </button>
+             <button class="send-btn" @click="handleSendFromHome">
+               <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                 <line x1="12" y1="19" x2="12" y2="5"></line>
+                 <polyline points="5 12 12 5 19 12"></polyline>
+               </svg>
+             </button>
+           </div>
          </div>
+         <p v-if="voiceStatus" class="voice-status">{{ voiceStatus }}</p>
       </div>
 
       <section class="common-question-panel">

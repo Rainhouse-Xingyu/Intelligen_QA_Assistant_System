@@ -60,8 +60,12 @@ public final class CasualConversationUtils {
     }
 
     private static boolean isGreeting(String compact) {
-        return compact.matches("(老师|同学|小助手|助手)?(你好|您好|哈喽|hello|hi|hey|嗨|早上好|中午好|下午好|晚上好|早|早安|午安|晚安|在吗|有人吗|在不在|有人不)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*")
-                || compact.matches("(你好|您好|哈喽|hello|hi|hey|嗨)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*(在吗|有人吗|在不在)(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*");
+        String greetingToken = "(你好|您好|哈喽|hello|hi|hey|嗨|早上好|中午好|下午好|晚上好|早|早安|午安|晚安|在吗|有人吗|在不在|有人不)";
+        String filler = "(呀|啊|哈|哦|喔|呢|嘛|么|啦|哇)*";
+        String prefix = "(老师|同学|小助手|助手)?";
+        return compact.matches(prefix + greetingToken + filler)
+                || compact.matches("(你好|您好|哈喽|hello|hi|hey|嗨)" + filler + "(在吗|有人吗|在不在)" + filler)
+                || compact.matches(prefix + greetingToken + filler + "(" + greetingToken + filler + ")+");
     }
 
     private static boolean isFarewell(String compact) {

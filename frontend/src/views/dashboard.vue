@@ -162,6 +162,16 @@
             {{ hotPickerLoading ? '搜索中...' : '搜索' }}
           </button>
         </div>
+        <label class="hot-picker-deadline">
+          <span>截止时间</span>
+          <input
+            v-model="hotConfigValidUntil"
+            class="input"
+            type="datetime-local"
+            :min="currentDateTime"
+          />
+          <small>可选，留空表示长期有效</small>
+        </label>
         <div class="hot-picker-list">
           <label v-for="entry in kbEntries" :key="entry.id" :class="['hot-picker-row', { selected: selectedKbEntryIds.includes(entry.id) }]">
             <input type="checkbox" :checked="selectedKbEntryIds.includes(entry.id)" @change="toggleKbEntry(entry.id)" />
@@ -207,6 +217,7 @@ const hotPickerModule = ref('')
 const hotPickerLoading = ref(false)
 const kbEntries = ref([])
 const selectedKbEntryIds = ref([])
+const hotConfigValidUntil = ref('')
 const modules = ['考务通知', '教学运行', '学业帮扶', '心理辅导']
 
 const topUnrecognized = computed(() => overview.value.topUnrecognized || [])
@@ -281,11 +292,13 @@ async function loadHotConfigs() {
 async function openHotPicker() {
   hotPickerOpen.value = true
   selectedKbEntryIds.value = []
+  hotConfigValidUntil.value = ''
   await searchKbEntries()
 }
 
 function closeHotPicker() {
   hotPickerOpen.value = false
+  hotConfigValidUntil.value = ''
 }
 
 async function searchKbEntries() {
@@ -317,6 +330,7 @@ async function saveSelectedHotConfigs() {
       questionText: entry.question,
       answerText: entry.answer,
       moduleType: entry.moduleType,
+      validUntil: hotConfigValidUntil.value || null,
       enabled: 1,
       sortOrder: hotConfigs.value.length + index
     })))
@@ -374,6 +388,13 @@ function formatDateTime(value) {
   if (!value) return '长期有效'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
+
+const currentDateTime = computed(() => {
+  const date = new Date()
+  date.setSeconds(0, 0)
+  const pad = value => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+})
 
 onMounted(loadData)
 </script>
@@ -544,7 +565,7 @@ onMounted(loadData)
   background: #fff;
   padding: 22px;
   display: grid;
-  grid-template-rows: auto auto minmax(220px, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(220px, 1fr) auto;
   gap: 16px;
   box-shadow: 0 24px 80px rgba(13, 21, 40, 0.24);
 }
@@ -573,6 +594,18 @@ onMounted(loadData)
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 180px auto;
   gap: 12px;
+}
+.hot-picker-deadline {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 320px) 1fr;
+  align-items: center;
+  gap: 12px;
+  color: #173875;
+  font-weight: 900;
+}
+.hot-picker-deadline small {
+  color: #6e82b1;
+  font-weight: 700;
 }
 .hot-picker-list {
   overflow: auto;
@@ -629,6 +662,12 @@ onMounted(loadData)
   .hot-picker-tools {
     grid-template-columns: 1fr 1fr;
   }
+  .hot-picker-deadline {
+    grid-template-columns: auto 1fr;
+  }
+  .hot-picker-deadline small {
+    grid-column: 2;
+  }
 }
 
 @media (max-width: 760px) {
@@ -636,6 +675,12 @@ onMounted(loadData)
   .dashboard-grid,
   .hot-picker-tools {
     grid-template-columns: 1fr;
+  }
+  .hot-picker-deadline {
+    grid-template-columns: 1fr;
+  }
+  .hot-picker-deadline small {
+    grid-column: auto;
   }
 }
 </style>

@@ -3,6 +3,7 @@ package me.rainhouse.qasystem.controller;
 import me.rainhouse.qasystem.common.result.Result;
 import me.rainhouse.qasystem.common.dto.AiChatRequest;
 import me.rainhouse.qasystem.common.dto.AiChatResponse;
+import me.rainhouse.qasystem.common.utils.AnswerTextSanitizer;
 import me.rainhouse.qasystem.common.utils.CasualConversationUtils;
 import me.rainhouse.qasystem.entity.ChatMessage;
 import me.rainhouse.qasystem.entity.ChatSession;
@@ -109,7 +110,7 @@ public class ChatController {
         
         // 4. (2.2模块) 判断是否需要播报语音
         if (needTts) {
-            mediaUrl = audioService.textToSpeech(aiAnswer);
+            mediaUrl = audioService.textToSpeech(AnswerTextSanitizer.forSpeech(aiAnswer));
         }
         saveMessage(session.getId(), 2, needTts ? 2 : 1, aiAnswer, mediaUrl);
         updateAnswerSource(session.getId(), aiChatResponse.getAnswerSource());
@@ -155,7 +156,7 @@ public class ChatController {
         String mediaUrl = null;
         if (Boolean.TRUE.equals(needTts)) {
             try {
-                mediaUrl = audioService.textToSpeech(aiAnswer);
+                mediaUrl = audioService.textToSpeech(AnswerTextSanitizer.forSpeech(aiAnswer));
             } catch (Exception ex) {
                 return Result.error(ex.getMessage());
             }
@@ -254,7 +255,7 @@ public class ChatController {
         aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, aiAnswer);
 
         // 4. (2.2模块) 默认对语音发问都生成对应的语音回答，以打造完整的双模态极佳体验
-        String responseMediaUrl = audioService.textToSpeech(aiAnswer);
+        String responseMediaUrl = audioService.textToSpeech(AnswerTextSanitizer.forSpeech(aiAnswer));
 
         // 5. 保存 AI 的回复
         saveMessage(session.getId(), 2, 2, aiAnswer, responseMediaUrl);
@@ -275,6 +276,9 @@ public class ChatController {
             queryText = audioService.speechToText(audioFile);
         } catch (Exception ex) {
             return Result.error(ex.getMessage());
+        }
+        if (queryText == null || queryText.isBlank()) {
+            return Result.error("语音未识别到有效内容，请重新录音后再试");
         }
 
         if (!CasualConversationUtils.isCasualOnly(queryText)) {
@@ -307,7 +311,7 @@ public class ChatController {
         String aiAnswer = bizContactService.appendContactInfoIfMatch(queryText, response.getAnswer());
         String responseMediaUrl;
         try {
-            responseMediaUrl = audioService.textToSpeech(aiAnswer);
+            responseMediaUrl = audioService.textToSpeech(AnswerTextSanitizer.forSpeech(aiAnswer));
         } catch (Exception ex) {
             responseMediaUrl = null;
             aiAnswer = aiAnswer + "\n\n语音回答生成失败：" + ex.getMessage();

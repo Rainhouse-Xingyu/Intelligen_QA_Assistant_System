@@ -2,6 +2,7 @@ import { h } from 'vue'
 import { apiForm } from '../../js/adminApi'
 
 export const navItems = [
+  { key: 'knowledge', label: '知识库管理', href: '/admin/knowledge', icon: DatabaseIcon },
   { key: 'survey', label: '问卷调查', href: '/admin/survey', icon: FileIcon },
   { key: 'dashboard', label: '数据统计', href: '/admin/dashboard', icon: ChartIcon },
   { key: 'academic', label: '学业帮扶', href: '/admin/academic', icon: CapIcon }

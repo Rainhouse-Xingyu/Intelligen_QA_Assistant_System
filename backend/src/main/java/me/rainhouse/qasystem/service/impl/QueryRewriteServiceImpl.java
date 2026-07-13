@@ -56,7 +56,8 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
     private String ruleRewrite(String query) {
         String normalized = normalizeQuery(query);
         if (!StringUtils.hasText(normalized)) {
-            return "";
+            // 例如 ASR 可能返回“你好你好”，前缀清洗后为空；不能把空改写结果继续传给向量检索。
+            return query.trim();
         }
 
         String core = removeQuestionWords(normalized);

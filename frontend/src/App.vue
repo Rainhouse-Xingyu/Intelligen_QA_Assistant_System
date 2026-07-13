@@ -1,6 +1,7 @@
 <template>
   <div class="app-container">
-    <SurveyAdmin v-if="currentPage === 'survey-admin'" />
+    <Knowledge v-if="currentPage === 'knowledge'" />
+    <SurveyAdmin v-else-if="currentPage === 'survey-admin'" />
     <StudentSurvey
       v-else-if="currentPage === 'student-survey'"
       @go-home="currentPage = 'home'"
@@ -34,6 +35,7 @@
 import { ref } from 'vue'
 import Home from './views/home.vue'
 import Dialogue from './views/dialogue.vue'
+import Knowledge from './views/knowledge.vue'
 import SurveyAdmin from './views/survey.vue'
 import StudentSurvey from './views/studentSurvey.vue'
 import Dashboard from './views/dashboard.vue'
@@ -41,6 +43,7 @@ import Academic from './views/academic.vue'
 import LoginPage from './views/LoginPage.vue'
 
 const routeMap = {
+  '/admin/knowledge': 'knowledge',
   '/admin/survey': 'survey-admin',
   '/survey': 'student-survey',
   '/admin/dashboard': 'dashboard',
